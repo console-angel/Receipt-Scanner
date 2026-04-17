@@ -4,7 +4,7 @@
   align-items: center;
   flex: 1;
   padding: 40px 20px;
-  background: linear-gradient(135deg, var(--bg) 0%, rgba(170, 59, 255, 0.05) 100%);
+  background: linear-gradient(135deg, var(--bg) 0%, rgba(255, 75, 114, 0.05) 100%);
   font-family: var(--sans);
   width: 100%;
   box-sizing: border-box;
@@ -33,7 +33,7 @@
 
 .main-content {
   width: 100%;
-  max-width: 600px;
+  max-width: 800px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -41,9 +41,9 @@
 
 .upload-zone {
   width: 100%;
-  border: 2px dashed var(--border);
-  border-radius: 24px;
-  padding: 60px 40px;
+  border: 3px dashed var(--border);
+  border-radius: 36px;
+  padding: 80px 40px;
   text-align: center;
   background: rgba(255, 255, 255, 0.5);
   backdrop-filter: blur(10px);
@@ -57,7 +57,7 @@
   border-color: var(--accent);
   background: var(--accent-bg);
   transform: translateY(-4px);
-  box-shadow: 0 10px 40px rgba(170, 59, 255, 0.15);
+  box-shadow: 0 10px 40px rgba(255, 75, 114, 0.15);
 }
 
 .hidden-input {
@@ -176,14 +176,14 @@
 .btn-primary {
   background: var(--accent);
   color: #fff;
-  box-shadow: 0 4px 15px rgba(170, 59, 255, 0.3);
+  box-shadow: 0 4px 15px rgba(255, 75, 114, 0.3);
   flex: 2;
 }
 
 .btn-primary:hover {
-  background: #9020e6;
+  background: #f2315b;
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(170, 59, 255, 0.4);
+  box-shadow: 0 6px 20px rgba(255, 75, 114, 0.4);
 }
 
 .btn-secondary {
@@ -241,7 +241,7 @@
 .tab.active {
   background: var(--accent);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(170, 59, 255, 0.25);
+  box-shadow: 0 4px 12px rgba(255, 75, 114, 0.25);
 }
 
 /* Processing Overlay */
@@ -281,7 +281,7 @@ button:disabled {
 /* Dashboard Styles */
 .dashboard {
   width: 100%;
-  max-width: 800px;
+  max-width: 1200px;
   animation: fadeIn 0.4s ease-out;
 }
 
@@ -313,9 +313,9 @@ button:disabled {
 .category-card {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.04);
   display: flex;
   flex-direction: column;
 }
