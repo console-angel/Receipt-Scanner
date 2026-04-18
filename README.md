@@ -1,4 +1,4 @@
-# Receipt Scanner
+# ReceiptiFy
 
 A React + Vite web app that scans receipt images with Gemini AI, stores extracted records in Supabase, and provides a dashboard for tracking spending by category.
 

@@ -31,7 +31,7 @@ function Logo() {
           <path d="M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none"/>
         </svg>
       </div>
-      <span className="logo-text">BudgetScan</span>
+      <span className="logo-text">ReceiptiFy</span>
     </div>
   );
 }
@@ -215,7 +215,7 @@ function App() {
     const url  = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href     = url;
-    link.download = `BudgetScan_Export_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `ReceiptiFy_Export_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -272,7 +272,7 @@ function App() {
                   <p>
                     {receipts.length > 0
                       ? `Your top spending category is ${categorySummary[0]?.name || 'Other'} with ${topSpendShare.toFixed(0)}% of all receipts.`
-                      : 'Upload your first receipt and BudgetScan will map your spending patterns automatically.'}
+                      : 'Upload your first receipt and ReceiptiFy will map your spending patterns automatically.'}
                   </p>
                 </div>
                 <div className="insight-metrics">
@@ -291,9 +291,9 @@ function App() {
               </section>
 
               <div className="stats-row">
-                <StatCard label="Total Receipts" value={receipts.length} icon="🧾" color="#16a34a" />
-                <StatCard label="Total Spent" value={`$${totalSpend.toFixed(2)}`} icon="💰" color="#3b82f6" />
-                <StatCard label="Top Category" value={topCategory} img={topCategory !== '—' ? getCategoryStyle(topCategory).img : undefined} icon="🏆" color="#f59e0b" />
+                <StatCard label="Receipts Added" value={receipts.length} icon="🧾" color="#16a34a" />
+                <StatCard label="Money Tracked" value={`$${totalSpend.toFixed(2)}`} icon="💰" color="#3b82f6" />
+                <StatCard label="Most Frequent Category" value={topCategory} img={topCategory !== '—' ? getCategoryStyle(topCategory).img : undefined} icon="🏆" color="#f59e0b" />
               </div>
 
               {categorySummary.length > 0 && (
