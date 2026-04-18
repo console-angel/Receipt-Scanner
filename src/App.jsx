@@ -338,7 +338,8 @@ function App() {
   const [user, setUser] = useState(null);
 
   const [settingsUsername, setSettingsUsername] = useState('');
-  const [settingsUsernameSaved, setSettingsUsernameSaved] = useState(null);
+  const [displayUsername, setDisplayUsername] = useState('');
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [settingsPassword, setSettingsPassword] = useState('');
   const [settingsMessage, setSettingsMessage] = useState('');
   const [settingsBusy, setSettingsBusy] = useState(false);
@@ -373,7 +374,8 @@ function App() {
       if (!nextSession?.user) {
         setReceipts([]);
         setSettingsUsername('');
-        setSettingsUsernameSaved(null);
+        setDisplayUsername('');
+        setProfileLoaded(false);
       }
     });
 
@@ -420,14 +422,16 @@ function App() {
       if (error) {
         console.error('Fetch profile error:', error);
         setSettingsUsername(user.email?.split('@')[0] || '');
-        setSettingsUsernameSaved(user.email?.split('@')[0] || '');
+        setDisplayUsername(user.email?.split('@')[0] || '');
+        setProfileLoaded(true);
         return;
       }
 
       const fallback = user.email?.split('@')[0] || '';
       const name = data?.username || fallback;
       setSettingsUsername(name);
-      setSettingsUsernameSaved(name);
+      setDisplayUsername(name);
+      setProfileLoaded(true);
     };
 
     loadCachedReceipts();
@@ -650,7 +654,7 @@ function App() {
       return;
     }
 
-    setSettingsUsernameSaved(nextUsername);
+    setDisplayUsername(nextUsername);
     setSettingsMessage('Username updated successfully.');
     setSettingsBusy(false);
   };
@@ -685,6 +689,7 @@ function App() {
     setAuthPassword('');
     setAuthError('');
     setAuthNotice('');
+    setProfileLoaded(false);
     setActiveTab('dashboard');
   };
 
@@ -767,7 +772,7 @@ function App() {
           <div className="topbar-title">{activeTab === 'dashboard' ? 'Dashboard' : activeTab === 'upload' ? 'Scan Receipt' : 'Settings'}</div>
           <div className="topbar-actions">
             <div className="user-pill">
-              <strong>{settingsUsernameSaved ?? 'User'}</strong>
+              <strong>{profileLoaded ? displayUsername : '\u00A0'}</strong>
               <span>{user.email}</span>
             </div>
             {activeTab === 'dashboard' && receipts.length > 0 && (
