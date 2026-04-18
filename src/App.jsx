@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import { scanReceipt } from './lib/gemini';
+import * as XLSX from 'xlsx';
 import './App.css';
 
 import imgFood          from './assets/category_food.png';
@@ -163,6 +164,39 @@ function App() {
   const totalSpend = receipts.reduce((sum, r) => sum + Number(r.total || 0), 0);
   const topCategory = Object.entries(categorizedReceipts).sort((a, b) => b[1].length - a[1].length)[0]?.[0] || '—';
 
+  const exportToExcel = () => {
+    if (receipts.length === 0) {
+      alert('No receipts to export.');
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    // ── Sheet 1: All Receipts ──────────────────────────────
+    const receiptRows = receipts.map(r => ({
+      'Store / Place':  r.store_name,
+      'Category':       r.category || 'Other',
+      'Total ($)':      Number(r.total).toFixed(2),
+      'Date':           new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    }));
+    const wsAll = XLSX.utils.json_to_sheet(receiptRows);
+    wsAll['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 12 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, wsAll, 'All Receipts');
+
+    // ── Sheet 2: Summary by Category ──────────────────────
+    const summaryRows = Object.entries(categorizedReceipts).map(([cat, items]) => ({
+      'Category':        cat,
+      '# of Receipts':  items.length,
+      'Total Spent ($)': items.reduce((s, i) => s + Number(i.total || 0), 0).toFixed(2),
+    }));
+    summaryRows.push({ 'Category': 'TOTAL', '# of Receipts': receipts.length, 'Total Spent ($)': totalSpend.toFixed(2) });
+    const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+    wsSummary['!cols'] = [{ wch: 20 }, { wch: 16 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary by Category');
+
+    XLSX.writeFile(wb, `BudgetScan_Export_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
   return (
     <div className="app-shell">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -172,12 +206,24 @@ function App() {
           <div className="topbar-title">
             {activeTab === 'dashboard' ? 'Dashboard' : 'Scan Receipt'}
           </div>
-          <button className="topbar-cta" onClick={() => setActiveTab('upload')}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            Scan New Receipt
-          </button>
+          <div className="topbar-actions">
+            {activeTab === 'dashboard' && receipts.length > 0 && (
+              <button className="topbar-export" onClick={exportToExcel}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Export Excel
+              </button>
+            )}
+            <button className="topbar-cta" onClick={() => setActiveTab('upload')}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Scan New Receipt
+            </button>
+          </div>
         </header>
 
         <main className="main-content">
