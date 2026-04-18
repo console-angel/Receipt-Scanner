@@ -21,6 +21,42 @@ const categoryIcons = {
 
 const getCategoryStyle = (cat) => categoryIcons[cat] || categoryIcons['Other'];
 
+const getReceiptDateValue = (receipt) => receipt.receipt_date || receipt.created_at;
+
+const getReceiptMonthKey = (receipt) => {
+  const sourceDate = getReceiptDateValue(receipt);
+  if (!sourceDate) return '';
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(sourceDate)) {
+    return sourceDate.slice(0, 7);
+  }
+
+  const parsedDate = new Date(sourceDate);
+  if (Number.isNaN(parsedDate.getTime())) return '';
+
+  return `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const formatReceiptDate = (value) => {
+  if (!value) return 'Date unavailable';
+
+  const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T00:00:00`)
+    : new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) return 'Date unavailable';
+
+  return parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const formatMonthLabel = (monthKey) => {
+  if (!monthKey) return 'All time';
+
+  const parsedDate = new Date(`${monthKey}-01T00:00:00`);
+  if (Number.isNaN(parsedDate.getTime())) return 'All time';
+
+  return parsedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+};
+
 function Logo() {
   return (
     <div className="logo-wrap">
@@ -91,6 +127,7 @@ function App() {
   const [isProcessing, setIsProcessing]   = useState(false);
   const [receipts, setReceipts]           = useState([]);
   const [activeTab, setActiveTab]         = useState('dashboard');
+  const [selectedMonth, setSelectedMonth] = useState('');
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -158,16 +195,21 @@ function App() {
     }
   };
 
-  const categorizedReceipts = receipts.reduce((acc, r) => {
+  const filteredReceipts = receipts.filter((receipt) => {
+    if (!selectedMonth) return true;
+    return getReceiptMonthKey(receipt) === selectedMonth;
+  });
+
+  const categorizedReceipts = filteredReceipts.reduce((acc, r) => {
     const cat = r.category || 'Other';
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(r);
     return acc;
   }, {});
 
-  const totalSpend = receipts.reduce((sum, r) => sum + Number(r.total || 0), 0);
+  const totalSpend = filteredReceipts.reduce((sum, r) => sum + Number(r.total || 0), 0);
   const topCategory = Object.entries(categorizedReceipts).sort((a, b) => b[1].length - a[1].length)[0]?.[0] || '—';
-  const averageSpend = receipts.length > 0 ? totalSpend / receipts.length : 0;
+  const averageSpend = filteredReceipts.length > 0 ? totalSpend / filteredReceipts.length : 0;
   const categorySummary = Object.entries(categorizedReceipts)
     .map(([name, items]) => ({
       name,
@@ -181,7 +223,7 @@ function App() {
     : 0;
 
   const exportToCSV = () => {
-    if (receipts.length === 0) {
+    if (filteredReceipts.length === 0) {
       alert('No receipts to export.');
       return;
     }
@@ -194,15 +236,13 @@ function App() {
     // ── Section 1: All Receipts ───────────────────────────
     lines.push('ALL RECEIPTS');
     lines.push(['Store / Place', 'Category', 'Total ($)', 'Date'].map(esc).join(','));
-    receipts.forEach(r => {
-      const sourceDate = r.receipt_date || r.created_at;
+    filteredReceipts.forEach(r => {
+      const sourceDate = getReceiptDateValue(r);
       lines.push([
         r.store_name,
         r.category || 'Other',
         Number(r.total).toFixed(2),
-        sourceDate
-          ? new Date(sourceDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-          : 'N/A',
+        sourceDate ? formatReceiptDate(sourceDate) : 'N/A',
       ].map(esc).join(','));
     });
 
@@ -273,17 +313,51 @@ function App() {
 
           {activeTab === 'dashboard' && (
             <div className="dashboard-page">
+              <section className="date-filter-panel">
+                <div className="date-filter-copy">
+                  <p className="date-filter-kicker">Receipt date filter</p>
+                  <h2>{formatMonthLabel(selectedMonth)}</h2>
+                  <p>Choose a month to review receipts together, regardless of category. Use the quick chips for fast filtering or switch back to all time.</p>
+                </div>
+                <div className="date-filter-controls">
+                  <div className="filter-chips">
+                    <button className={`filter-chip ${selectedMonth === '' ? 'active' : ''}`} onClick={() => setSelectedMonth('')}>
+                      All time
+                    </button>
+                    <button className={`filter-chip ${selectedMonth === new Date().toISOString().slice(0, 7) ? 'active' : ''}`} onClick={() => setSelectedMonth(new Date().toISOString().slice(0, 7))}>
+                      This month
+                    </button>
+                  </div>
+                  <div className="month-picker-wrap">
+                    <label className="month-picker-label" htmlFor="receipt-month-filter">Pick a month</label>
+                    <input
+                      id="receipt-month-filter"
+                      className="month-picker"
+                      type="month"
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </section>
+
               <section className="insight-banner">
                 <div className="insight-copy">
                   <p className="insight-kicker">Smart Spending Snapshot</p>
                   <h2>Spending rhythm at a glance</h2>
                   <p>
-                    {receipts.length > 0
+                    {filteredReceipts.length > 0
                       ? `Your top spending category is ${categorySummary[0]?.name || 'Other'} with ${topSpendShare.toFixed(0)}% of all receipts.`
-                      : 'Upload your first receipt and ReceiptiFy will map your spending patterns automatically.'}
+                      : selectedMonth
+                        ? 'No receipts were found for this month. Try another month or switch back to all time.'
+                        : 'Upload your first receipt and ReceiptiFy will map your spending patterns automatically.'}
                   </p>
                 </div>
                 <div className="insight-metrics">
+                  <div className="insight-pill">
+                    <span>Receipts in view</span>
+                    <strong>{filteredReceipts.length}</strong>
+                  </div>
                   <div className="insight-pill">
                     <span>Avg. Receipt</span>
                     <strong>${averageSpend.toFixed(2)}</strong>
@@ -299,7 +373,7 @@ function App() {
               </section>
 
               <div className="stats-row">
-                <StatCard label="Receipts Added" value={receipts.length} icon="🧾" color="#16a34a" />
+                <StatCard label="Receipts in View" value={filteredReceipts.length} icon="🧾" color="#16a34a" />
                 <StatCard label="Money Tracked" value={`$${totalSpend.toFixed(2)}`} icon="💰" color="#3b82f6" />
                 <StatCard label="Most Frequent Category" value={topCategory} img={topCategory !== '—' ? getCategoryStyle(topCategory).img : undefined} icon="🏆" color="#f59e0b" />
               </div>
@@ -338,8 +412,8 @@ function App() {
               {Object.keys(categorizedReceipts).length === 0 ? (
                 <div className="empty-state">
                   <div className="empty-icon">🧾</div>
-                  <h3>No receipts yet</h3>
-                  <p>Scan your first receipt to start tracking your spending.</p>
+                  <h3>{selectedMonth ? 'No receipts found for this month' : 'No receipts yet'}</h3>
+                  <p>{selectedMonth ? 'Try a different month or switch back to all time to see your receipts.' : 'Scan your first receipt to start tracking your spending.'}</p>
                   <button className="btn-primary" onClick={() => setActiveTab('upload')}>Scan a Receipt</button>
                 </div>
               ) : (
@@ -364,11 +438,7 @@ function App() {
                             <li key={item.id} className="receipt-item">
                               <div className="receipt-info">
                                 <span className="store-name">{item.store_name}</span>
-                                <span className="date">{
-                                  (item.receipt_date || item.created_at)
-                                    ? new Date(item.receipt_date || item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                                    : 'Date unavailable'
-                                }</span>
+                                <span className="date">{formatReceiptDate(getReceiptDateValue(item))}</span>
                               </div>
                               <div className="receipt-actions">
                                 <span className="total">${Number(item.total).toFixed(2)}</span>
