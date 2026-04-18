@@ -211,7 +211,6 @@ function App() {
   };
 
   const deleteReceipt = async (id) => {
-    if (!window.confirm('Delete this receipt? This cannot be undone.')) return;
     const { error } = await supabase.rpc('delete_receipt', { receipt_id: id });
     if (error) {
       console.error('Delete error:', error);
