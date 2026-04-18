@@ -7,7 +7,7 @@ A React + Vite web app that scans receipt images with Gemini AI, stores extracte
 - Upload receipt images (JPEG/JPG/PNG)
 - Extract store name, total amount, and category using Gemini
 - Save and fetch receipts from Supabase
-- Filter receipts by month or switch back to all time
+- Filter receipts by month and year, with quick access to all time or the current month
 - View spend summaries and category breakdowns
 - Export receipts and summary data to CSV
 

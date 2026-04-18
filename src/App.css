@@ -269,7 +269,7 @@
   align-items: stretch;
 }
 
-.filter-chips {
+.filter-presets {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
@@ -299,6 +299,26 @@
   box-shadow: 0 10px 20px rgba(35, 206, 107, 0.2);
 }
 
+.custom-month-panel {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: max-height 0.28s ease, opacity 0.28s ease, transform 0.28s ease;
+}
+
+.custom-month-panel.visible {
+  max-height: 120px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.month-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .month-picker-wrap {
   display: flex;
   flex-direction: column;
@@ -313,14 +333,22 @@
 
 .month-picker {
   width: 100%;
+  min-height: 46px;
   border-radius: 12px;
   border: 1px solid rgba(163, 155, 168, 0.38);
-  background: #fff;
-  padding: 11px 12px;
+  background: linear-gradient(180deg, #fff, #f8fbff);
+  padding: 11px 14px;
   color: var(--text-h);
   font: inherit;
   outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  -webkit-appearance: none;
+  appearance: none;
+  box-shadow: 0 1px 0 rgba(237, 245, 252, 0.9) inset;
+}
+
+.month-picker:hover {
+  transform: translateY(-1px);
 }
 
 .month-picker:focus {
@@ -342,6 +370,35 @@
   box-shadow: 0 18px 36px rgba(39, 45, 45, 0.22);
   overflow: hidden;
   position: relative;
+}
+
+.insight-banner.compact {
+  grid-template-columns: 1.1fr 0.9fr;
+  padding: 18px 18px;
+  margin-top: 4px;
+  border-radius: 20px;
+}
+
+.insight-banner.compact .insight-copy h2 {
+  font-size: 1.18rem;
+  margin-top: 8px;
+}
+
+.insight-banner.compact .insight-copy p {
+  font-size: 0.92rem;
+  max-width: 52ch;
+}
+
+.insight-banner.compact .insight-metrics {
+  gap: 8px;
+}
+
+.insight-banner.compact .insight-pill {
+  padding: 10px 12px;
+}
+
+.insight-banner.compact .insight-action {
+  padding: 10px 12px;
 }
 
 .insight-banner::after {
@@ -988,6 +1045,16 @@ button:disabled {
 
   .date-filter-panel {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .month-picker-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-presets {
+    gap: 8px;
   }
 }
 

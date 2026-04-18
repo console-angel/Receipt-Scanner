@@ -21,6 +21,13 @@ const categoryIcons = {
 
 const getCategoryStyle = (cat) => categoryIcons[cat] || categoryIcons['Other'];
 
+const FILTER_MODES = {
+  ALL: 'all',
+  THIS_MONTH: 'thisMonth',
+  LAST_MONTH: 'lastMonth',
+  LAST_3_MONTHS: 'last3Months',
+};
+
 const getReceiptDateValue = (receipt) => receipt.receipt_date || receipt.created_at;
 
 const getReceiptMonthKey = (receipt) => {
@@ -48,13 +55,35 @@ const formatReceiptDate = (value) => {
   return parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-const formatMonthLabel = (monthKey) => {
-  if (!monthKey) return 'All time';
+const getCurrentMonthKey = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
 
-  const parsedDate = new Date(`${monthKey}-01T00:00:00`);
-  if (Number.isNaN(parsedDate.getTime())) return 'All time';
+const getMonthIndex = (monthKey) => {
+  if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return null;
+  const [year, month] = monthKey.split('-').map(Number);
+  return year * 12 + month;
+};
 
-  return parsedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+const shiftMonthKey = (monthKey, offset) => {
+  const [yearPart, monthPart] = monthKey.split('-').map(Number);
+  const zeroBasedMonth = monthPart - 1 + offset;
+  const shiftedDate = new Date(yearPart, zeroBasedMonth, 1);
+  return `${shiftedDate.getFullYear()}-${String(shiftedDate.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const getQuickFilterLabel = (filterMode) => {
+  switch (filterMode) {
+    case FILTER_MODES.THIS_MONTH:
+      return 'This month';
+    case FILTER_MODES.LAST_MONTH:
+      return 'Last month';
+    case FILTER_MODES.LAST_3_MONTHS:
+      return 'Last 3 months';
+    default:
+      return 'All time';
+  }
 };
 
 function Logo() {
@@ -127,7 +156,7 @@ function App() {
   const [isProcessing, setIsProcessing]   = useState(false);
   const [receipts, setReceipts]           = useState([]);
   const [activeTab, setActiveTab]         = useState('dashboard');
-  const [selectedMonth, setSelectedMonth] = useState('');
+  const [filterMode, setFilterMode]       = useState(FILTER_MODES.ALL);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -195,9 +224,25 @@ function App() {
     }
   };
 
+  const currentMonthKey = getCurrentMonthKey();
+  const thisMonthKey = currentMonthKey;
+  const lastMonthKey = shiftMonthKey(currentMonthKey, -1);
+  const last3MonthsStartKey = shiftMonthKey(currentMonthKey, -2);
+
   const filteredReceipts = receipts.filter((receipt) => {
-    if (!selectedMonth) return true;
-    return getReceiptMonthKey(receipt) === selectedMonth;
+    const receiptMonthKey = getReceiptMonthKey(receipt);
+    const receiptMonthIndex = getMonthIndex(receiptMonthKey);
+
+    if (filterMode === FILTER_MODES.ALL || !receiptMonthKey || receiptMonthIndex === null) return filterMode === FILTER_MODES.ALL;
+    if (filterMode === FILTER_MODES.THIS_MONTH) return receiptMonthKey === thisMonthKey;
+    if (filterMode === FILTER_MODES.LAST_MONTH) return receiptMonthKey === lastMonthKey;
+    if (filterMode === FILTER_MODES.LAST_3_MONTHS) {
+      const startIndex = getMonthIndex(last3MonthsStartKey);
+      const endIndex = getMonthIndex(thisMonthKey);
+      return startIndex !== null && endIndex !== null && receiptMonthIndex >= startIndex && receiptMonthIndex <= endIndex;
+    }
+
+    return false;
   });
 
   const categorizedReceipts = filteredReceipts.reduce((acc, r) => {
@@ -316,40 +361,36 @@ function App() {
               <section className="date-filter-panel">
                 <div className="date-filter-copy">
                   <p className="date-filter-kicker">Receipt date filter</p>
-                  <h2>{formatMonthLabel(selectedMonth)}</h2>
-                  <p>Choose a month to review receipts together, regardless of category. Use the quick chips for fast filtering or switch back to all time.</p>
+                  <h2>{getQuickFilterLabel(filterMode)}</h2>
+                  <p>Use quick filters to review your spending by period, regardless of category.</p>
                 </div>
                 <div className="date-filter-controls">
-                  <div className="filter-chips">
-                    <button className={`filter-chip ${selectedMonth === '' ? 'active' : ''}`} onClick={() => setSelectedMonth('')}>
+                  <div className="filter-presets">
+                    <button className={`filter-chip ${filterMode === FILTER_MODES.ALL ? 'active' : ''}`} onClick={() => setFilterMode(FILTER_MODES.ALL)}>
                       All time
                     </button>
-                    <button className={`filter-chip ${selectedMonth === new Date().toISOString().slice(0, 7) ? 'active' : ''}`} onClick={() => setSelectedMonth(new Date().toISOString().slice(0, 7))}>
+                    <button className={`filter-chip ${filterMode === FILTER_MODES.THIS_MONTH ? 'active' : ''}`} onClick={() => setFilterMode(FILTER_MODES.THIS_MONTH)}>
                       This month
                     </button>
-                  </div>
-                  <div className="month-picker-wrap">
-                    <label className="month-picker-label" htmlFor="receipt-month-filter">Pick a month</label>
-                    <input
-                      id="receipt-month-filter"
-                      className="month-picker"
-                      type="month"
-                      value={selectedMonth}
-                      onChange={(e) => setSelectedMonth(e.target.value)}
-                    />
+                    <button className={`filter-chip ${filterMode === FILTER_MODES.LAST_MONTH ? 'active' : ''}`} onClick={() => setFilterMode(FILTER_MODES.LAST_MONTH)}>
+                      Last month
+                    </button>
+                    <button className={`filter-chip ${filterMode === FILTER_MODES.LAST_3_MONTHS ? 'active' : ''}`} onClick={() => setFilterMode(FILTER_MODES.LAST_3_MONTHS)}>
+                      Last 3 months
+                    </button>
                   </div>
                 </div>
               </section>
 
-              <section className="insight-banner">
+              <section className="insight-banner compact">
                 <div className="insight-copy">
                   <p className="insight-kicker">Smart Spending Snapshot</p>
                   <h2>Spending rhythm at a glance</h2>
                   <p>
                     {filteredReceipts.length > 0
                       ? `Your top spending category is ${categorySummary[0]?.name || 'Other'} with ${topSpendShare.toFixed(0)}% of all receipts.`
-                      : selectedMonth
-                        ? 'No receipts were found for this month. Try another month or switch back to all time.'
+                      : filterMode !== FILTER_MODES.ALL
+                        ? 'No receipts were found for this time period. Try another quick filter or switch back to all time.'
                         : 'Upload your first receipt and ReceiptiFy will map your spending patterns automatically.'}
                   </p>
                 </div>
@@ -378,42 +419,11 @@ function App() {
                 <StatCard label="Most Frequent Category" value={topCategory} img={topCategory !== '—' ? getCategoryStyle(topCategory).img : undefined} icon="🏆" color="#f59e0b" />
               </div>
 
-              {categorySummary.length > 0 && (
-                <section className="category-meter-panel">
-                  <div className="meter-header">
-                    <h3>Category Spend Distribution</h3>
-                    <span>Live from your uploaded receipts</span>
-                  </div>
-                  <div className="meter-grid">
-                    {categorySummary.map((item) => {
-                      const widthPct = largestCategoryTotal > 0 ? (item.total / largestCategoryTotal) * 100 : 0;
-                      const style = getCategoryStyle(item.name);
-
-                      return (
-                        <div key={item.name} className="meter-row">
-                          <div className="meter-meta">
-                            <span className="meter-name">{item.name}</span>
-                            <span className="meter-count">{item.count} receipt{item.count !== 1 ? 's' : ''}</span>
-                          </div>
-                          <div className="meter-track">
-                            <span
-                              className="meter-fill"
-                              style={{ width: `${Math.max(widthPct, 6)}%`, background: `linear-gradient(90deg, ${style.color}, #23CE6B)` }}
-                            />
-                          </div>
-                          <span className="meter-value">${item.total.toFixed(2)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
-
               {Object.keys(categorizedReceipts).length === 0 ? (
                 <div className="empty-state">
                   <div className="empty-icon">🧾</div>
-                  <h3>{selectedMonth ? 'No receipts found for this month' : 'No receipts yet'}</h3>
-                  <p>{selectedMonth ? 'Try a different month or switch back to all time to see your receipts.' : 'Scan your first receipt to start tracking your spending.'}</p>
+                  <h3>{filterMode !== FILTER_MODES.ALL ? 'No receipts found for this time period' : 'No receipts yet'}</h3>
+                  <p>{filterMode !== FILTER_MODES.ALL ? 'Try a different quick filter or switch to a custom month and year.' : 'Scan your first receipt to start tracking your spending.'}</p>
                   <button className="btn-primary" onClick={() => setActiveTab('upload')}>Scan a Receipt</button>
                 </div>
               ) : (
