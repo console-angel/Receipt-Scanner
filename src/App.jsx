@@ -338,7 +338,7 @@ function App() {
   const [user, setUser] = useState(null);
 
   const [settingsUsername, setSettingsUsername] = useState('');
-  const [settingsUsernameSaved, setSettingsUsernameSaved] = useState('');
+  const [settingsUsernameSaved, setSettingsUsernameSaved] = useState(null);
   const [settingsPassword, setSettingsPassword] = useState('');
   const [settingsMessage, setSettingsMessage] = useState('');
   const [settingsBusy, setSettingsBusy] = useState(false);
@@ -373,7 +373,7 @@ function App() {
       if (!nextSession?.user) {
         setReceipts([]);
         setSettingsUsername('');
-        setSettingsUsernameSaved('');
+        setSettingsUsernameSaved(null);
       }
     });
 
@@ -767,7 +767,7 @@ function App() {
           <div className="topbar-title">{activeTab === 'dashboard' ? 'Dashboard' : activeTab === 'upload' ? 'Scan Receipt' : 'Settings'}</div>
           <div className="topbar-actions">
             <div className="user-pill">
-              <strong>{settingsUsernameSaved || user.email?.split('@')[0] || 'User'}</strong>
+              <strong>{settingsUsernameSaved ?? 'User'}</strong>
               <span>{user.email}</span>
             </div>
             {activeTab === 'dashboard' && receipts.length > 0 && (
