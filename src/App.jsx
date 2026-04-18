@@ -170,6 +170,16 @@ const normalizeReceiptAmount = (value) => {
   return parsed.toFixed(2);
 };
 
+const getReceiptEffectiveSpend = (receipt) => {
+  const baseTotal = Number(receipt?.total || 0);
+  if (!receipt?.split_enabled) return baseTotal;
+
+  const splitAmount = Number(receipt?.split_amount);
+  if (!Number.isFinite(splitAmount) || splitAmount < 0) return baseTotal;
+
+  return splitAmount;
+};
+
 const normalizeReceiptDateKey = (value) => {
   if (!value) return null;
   const raw = String(value).trim();
@@ -396,7 +406,14 @@ function App() {
   const [uploadMessage, setUploadMessage] = useState('');
   const [activeReceipt, setActiveReceipt] = useState(null);
   const [activeReceiptImageUrl, setActiveReceiptImageUrl] = useState('');
-  const [receiptDraft, setReceiptDraft] = useState({ store_name: '', total: '', category: 'Other', receipt_date: '' });
+  const [receiptDraft, setReceiptDraft] = useState({
+    store_name: '',
+    total: '',
+    category: 'Other',
+    receipt_date: '',
+    split_enabled: false,
+    split_amount: '',
+  });
   const [receiptModalBusy, setReceiptModalBusy] = useState(false);
   const [receiptModalMessage, setReceiptModalMessage] = useState('');
 
@@ -614,6 +631,11 @@ function App() {
       total: Number(receipt.total || 0).toFixed(2),
       category: receipt.category || 'Other',
       receipt_date: normalizeReceiptDateKey(receipt.receipt_date) || '',
+      split_enabled: Boolean(receipt.split_enabled),
+      split_amount:
+        receipt.split_amount !== null && receipt.split_amount !== undefined
+          ? normalizeReceiptAmount(receipt.split_amount)
+          : '',
     });
 
     if (!receipt.image_path) {
@@ -639,6 +661,7 @@ function App() {
     const nextStore = receiptDraft.store_name.trim();
     const nextTotal = Number(receiptDraft.total);
     const nextDate = normalizeReceiptDateKey(receiptDraft.receipt_date);
+    const splitEnabled = Boolean(receiptDraft.split_enabled);
 
     if (!nextStore) {
       setReceiptModalMessage('Store name is required.');
@@ -655,6 +678,20 @@ function App() {
       return;
     }
 
+    let nextSplitAmount = null;
+    if (splitEnabled) {
+      const parsedSplit = Number(receiptDraft.split_amount);
+      if (!Number.isFinite(parsedSplit) || parsedSplit < 0) {
+        setReceiptModalMessage('Split amount must be a valid positive number.');
+        return;
+      }
+      if (parsedSplit > nextTotal) {
+        setReceiptModalMessage('Split amount cannot be greater than total receipt amount.');
+        return;
+      }
+      nextSplitAmount = parsedSplit;
+    }
+
     setReceiptModalBusy(true);
     setReceiptModalMessage('');
 
@@ -663,6 +700,8 @@ function App() {
       total: nextTotal,
       category: receiptDraft.category || 'Other',
       receipt_date: nextDate,
+      split_enabled: splitEnabled,
+      split_amount: splitEnabled ? nextSplitAmount : null,
     };
 
     const { data, error } = await supabase
@@ -742,6 +781,8 @@ function App() {
             total: extractedData.total,
             category: extractedData.category,
             receipt_date: extractedData.receipt_date,
+            split_enabled: false,
+            split_amount: null,
             image_path: filePath,
             image_mime_type: sourceFile.type || mimeType,
           },
@@ -806,7 +847,7 @@ function App() {
 
     const lines = [];
     lines.push('ALL RECEIPTS');
-    lines.push(['Receipt ID', 'Store / Place', 'Category', 'Total ($)', 'Receipt Date'].map(esc).join(','));
+    lines.push(['Receipt ID', 'Store / Place', 'Category', 'Total ($)', 'Your Expenditure ($)', 'Receipt Date'].map(esc).join(','));
 
     filteredReceipts.forEach((receipt) => {
       const sourceDate = getReceiptDateValue(receipt);
@@ -816,6 +857,7 @@ function App() {
           getCsvSafeText(receipt.store_name),
           getCsvSafeText(receipt.category, 'Other'),
           normalizeReceiptAmount(receipt.total),
+          normalizeReceiptAmount(getReceiptEffectiveSpend(receipt)),
           getCsvSafeDate(sourceDate),
         ]
           .map(esc)
@@ -828,7 +870,7 @@ function App() {
     lines.push(['Category', '# of Receipts', 'Total Spent ($)'].map(esc).join(','));
 
     Object.entries(categorizedReceipts).forEach(([cat, items]) => {
-      const catTotal = items.reduce((sum, entry) => sum + Number(entry.total || 0), 0);
+      const catTotal = items.reduce((sum, entry) => sum + getReceiptEffectiveSpend(entry), 0);
       lines.push([cat, items.length, catTotal.toFixed(2)].map(esc).join(','));
     });
 
@@ -936,14 +978,14 @@ function App() {
     return accumulator;
   }, {});
 
-  const totalSpend = filteredReceipts.reduce((sum, receipt) => sum + Number(receipt.total || 0), 0);
+  const totalSpend = filteredReceipts.reduce((sum, receipt) => sum + getReceiptEffectiveSpend(receipt), 0);
   const topCategory = Object.entries(categorizedReceipts).sort((a, b) => b[1].length - a[1].length)[0]?.[0] || '—';
   const averageSpend = filteredReceipts.length > 0 ? totalSpend / filteredReceipts.length : 0;
   const categorySummary = Object.entries(categorizedReceipts)
     .map(([name, items]) => ({
       name,
       count: items.length,
-      total: items.reduce((sum, receipt) => sum + Number(receipt.total || 0), 0),
+      total: items.reduce((sum, receipt) => sum + getReceiptEffectiveSpend(receipt), 0),
     }))
     .sort((a, b) => b.total - a.total);
 
@@ -1103,7 +1145,7 @@ function App() {
                 <div className="categories-grid">
                   {Object.entries(categorizedReceipts).map(([category, items]) => {
                     const style = getCategoryStyle(category);
-                    const catTotal = items.reduce((sum, entry) => sum + Number(entry.total || 0), 0);
+                    const catTotal = items.reduce((sum, entry) => sum + getReceiptEffectiveSpend(entry), 0);
 
                     return (
                       <div key={category} className="category-card">
@@ -1126,6 +1168,11 @@ function App() {
                                 <button className="receipt-info-btn" onClick={() => openReceiptModal(item)} title="View receipt details" type="button">
                                   <span className="store-name">{item.store_name}</span>
                                   <span className="date">{formatReceiptDate(getReceiptDateValue(item))}</span>
+                                  {item.split_enabled && (
+                                    <span className="split-spend">
+                                      You spent ${normalizeReceiptAmount(getReceiptEffectiveSpend(item))} of ${normalizeReceiptAmount(item.total)}
+                                    </span>
+                                  )}
                                 </button>
                               </div>
                               <div className="receipt-actions">
@@ -1386,6 +1433,36 @@ function App() {
                         required
                       />
                     </label>
+
+                    <label className="split-toggle-row">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(receiptDraft.split_enabled)}
+                        onChange={(event) =>
+                          setReceiptDraft((prev) => ({
+                            ...prev,
+                            split_enabled: event.target.checked,
+                            split_amount: event.target.checked ? prev.split_amount : '',
+                          }))
+                        }
+                      />
+                      <span>Split expense for this receipt</span>
+                    </label>
+
+                    {receiptDraft.split_enabled && (
+                      <label>
+                        Your Expenditure ($)
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max={receiptDraft.total || undefined}
+                          value={receiptDraft.split_amount}
+                          onChange={(event) => setReceiptDraft((prev) => ({ ...prev, split_amount: event.target.value }))}
+                          required
+                        />
+                      </label>
+                    )}
 
                     {receiptModalMessage && <p className="receipt-modal-message">{receiptModalMessage}</p>}
 

@@ -747,6 +747,13 @@
   color: var(--text);
 }
 
+.split-spend {
+  margin-top: 3px;
+  font-size: 0.74rem;
+  color: #1f6f49;
+  font-weight: 700;
+}
+
 .receipt-actions {
   display: flex;
   align-items: center;
@@ -1377,6 +1384,20 @@ button:disabled {
   font-weight: 700;
 }
 
+.split-toggle-row {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+
+.split-toggle-row input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #23ce6b;
+}
+
 .receipt-modal-form input,
 .receipt-modal-form select {
   width: 100%;
@@ -1455,6 +1476,10 @@ button:disabled {
 }
 
 [data-theme='dark'] .cat-total {
+  color: #8ff0ba;
+}
+
+[data-theme='dark'] .split-spend {
   color: #8ff0ba;
 }
 
