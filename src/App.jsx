@@ -3,13 +3,20 @@ import { supabase } from './lib/supabase';
 import { scanReceipt } from './lib/gemini';
 import './App.css';
 
+import imgFood          from './assets/category_food.png';
+import imgEntertainment from './assets/category_entertainment.png';
+import imgTransport     from './assets/category_transport.png';
+import imgUtilities     from './assets/category_utilities.png';
+import imgShopping      from './assets/category_shopping.png';
+import imgOther         from './assets/category_other.png';
+
 const categoryIcons = {
-  Food:          { icon: '🍔', color: '#f59e0b', bg: '#fef3c7' },
-  Entertainment: { icon: '🎬', color: '#8b5cf6', bg: '#ede9fe' },
-  Transport:     { icon: '🚗', color: '#3b82f6', bg: '#dbeafe' },
-  Utilities:     { icon: '⚡', color: '#f97316', bg: '#ffedd5' },
-  Shopping:      { icon: '🛍️', color: '#ec4899', bg: '#fce7f3' },
-  Other:         { icon: '📋', color: '#6b7280', bg: '#f3f4f6' },
+  Food:          { img: imgFood,          color: '#f59e0b', bg: '#fef3c7' },
+  Entertainment: { img: imgEntertainment, color: '#8b5cf6', bg: '#ede9fe' },
+  Transport:     { img: imgTransport,     color: '#3b82f6', bg: '#dbeafe' },
+  Utilities:     { img: imgUtilities,     color: '#f97316', bg: '#ffedd5' },
+  Shopping:      { img: imgShopping,      color: '#ec4899', bg: '#fce7f3' },
+  Other:         { img: imgOther,         color: '#6b7280', bg: '#f3f4f6' },
 };
 
 const getCategoryStyle = (cat) => categoryIcons[cat] || categoryIcons['Other'];
@@ -61,11 +68,14 @@ function Sidebar({ activeTab, setActiveTab }) {
   );
 }
 
-function StatCard({ label, value, icon, color }) {
+function StatCard({ label, value, icon, img, color }) {
   return (
     <div className="stat-card">
       <div className="stat-icon" style={{ background: color + '22', color }}>
-        <span>{icon}</span>
+        {img
+          ? <img src={img} alt={label} className="stat-cat-img" />
+          : <span>{icon}</span>
+        }
       </div>
       <div className="stat-info">
         <span className="stat-value">{value}</span>
@@ -177,7 +187,7 @@ function App() {
               <div className="stats-row">
                 <StatCard label="Total Receipts" value={receipts.length} icon="🧾" color="#16a34a" />
                 <StatCard label="Total Spent" value={`$${totalSpend.toFixed(2)}`} icon="💰" color="#3b82f6" />
-                <StatCard label="Top Category" value={topCategory} icon="🏆" color="#f59e0b" />
+                <StatCard label="Top Category" value={topCategory} img={topCategory !== '—' ? getCategoryStyle(topCategory).img : undefined} icon="🏆" color="#f59e0b" />
               </div>
 
               {Object.keys(categorizedReceipts).length === 0 ? (
@@ -195,7 +205,9 @@ function App() {
                     return (
                       <div key={category} className="category-card">
                         <div className="category-header">
-                          <div className="cat-icon-wrap" style={{ background: style.bg, color: style.color }}>{style.icon}</div>
+                          <div className="cat-icon-wrap" style={{ background: style.bg }}>
+                            <img src={style.img} alt={category} className="cat-img" />
+                          </div>
                           <div className="cat-meta">
                             <h3>{category}</h3>
                             <span className="cat-count">{items.length} receipt{items.length !== 1 ? 's' : ''}</span>
