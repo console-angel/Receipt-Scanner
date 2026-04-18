@@ -1,45 +1,51 @@
 # ReceiptiFy
 
-A React + Vite web app that scans receipt images with Gemini AI, stores extracted records in Supabase, and provides a dashboard for tracking spending by category.
+## Project Description
+ReceiptiFy is a full-stack-style frontend web app (React + Vite) that scans receipts with Google Gemini, stores extracted data in Supabase, and visualizes expenses, reimbursements, and net out-of-pocket metrics across dashboard and analytics views.
 
-## Features
-
-- Email/password login and signup with client-side attempt throttling
-- Per-user receipt isolation (each authenticated user sees only their own receipts)
-- Settings screen to update username, switch light/dark mode, and change password
-- Upload receipt images (JPEG/JPG/PNG)
-- Extract store name, total amount, and category using Gemini
-- Save and fetch receipts from Supabase
-- Filter receipts by month and year, with quick access to all time or the current month
-- View spend summaries and category breakdowns
-- Export receipts and summary data to CSV
+The app supports user authentication, per-user data isolation, receipt upload and parsing, category-based summaries, time filters, and CSV export.
 
 ## Tech Stack
-
 - React 19
 - Vite 8
-- Supabase JavaScript SDK
-- Google GenAI SDK
-- ESLint
+- Supabase (Auth, Database, Storage)
+- Google Gemini API (via `@google/genai`)
+- ESLint 9
+
+## Languages & Frameworks
+- JavaScript (ES Modules)
+- JSX (React components)
+- CSS
+- SQL (Supabase schema and policies)
+- Framework/Tooling: React + Vite
+
+## APIs Used
+- Supabase API (`@supabase/supabase-js`)
+  - Auth: sign-up/sign-in/session
+  - Postgres tables and RLS-secured CRUD
+  - Storage bucket for receipt files/images
+- Google Gemini API (`@google/genai`)
+  - Receipt OCR-style extraction (store name, total, category, date)
+
+## Core Features
+- Email/password authentication
+- Client-side login attempt throttling
+- Per-user receipt access (`user_id` scoped)
+- Receipt scanning and structured extraction with Gemini
+- Expense vs reimbursement tracking
+- Dashboard and analytics summaries
+- CSV export
+- Light/Dark theme toggle
+- Profile/settings management
 
 ## Prerequisites
-
 - Node.js 18+ (Node.js 20+ recommended)
 - npm 9+
-- A Supabase project
-- A Gemini API key
+- Supabase project
+- Google Gemini API key
 
-## Installation
-
-1. Clone the repository.
-1. Install dependencies:
-
-```bash
-npm install
-```
-
-1. Create an environment file named `.env` in the project root.
-1. Add the required variables:
+## Environment Variables
+Create a `.env` file in the project root:
 
 ```env
 VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
@@ -47,26 +53,23 @@ VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 VITE_GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 ```
 
-1. Start the development server:
+## Install Dependencies
+Install all app dependencies:
 
 ```bash
-npm run dev
+npm install
 ```
 
-## Required Dependencies
+Dependencies are defined in `package.json`.
 
-These are installed by `npm install` from `package.json`.
-
-### Runtime dependencies
-
+### Runtime Dependencies
 - `react`
 - `react-dom`
 - `@supabase/supabase-js`
 - `@google/genai`
 - `axios`
 
-### Development dependencies
-
+### Dev Dependencies
 - `vite`
 - `@vitejs/plugin-react`
 - `eslint`
@@ -80,18 +83,40 @@ These are installed by `npm install` from `package.json`.
 - `autoprefixer`
 - `tailwindcss`
 
-## Supabase Setup
+## Run the Web App
+Start development server:
 
-The app now expects:
+```bash
+npm run dev
+```
 
-- Supabase Auth with Email provider enabled
-- A `profiles` table keyed by `auth.users.id`
-- A `receipts` table with `user_id` (UUID) tied to the authenticated user
-- Row Level Security policies that scope read/write/delete to the current user
+Build for production:
 
-### SQL Editor migration (existing projects)
+```bash
+npm run build
+```
 
-Run this in Supabase SQL Editor for multi-user auth + receipts:
+Preview production build:
+
+```bash
+npm run preview
+```
+
+Lint source code:
+
+```bash
+npm run lint
+```
+
+## Supabase Setup (Required)
+You need the following configured in Supabase:
+- Auth enabled (Email provider at minimum)
+- `profiles` table keyed by `auth.users.id`
+- `receipts` table with `user_id` and reimbursement fields
+- Row Level Security (RLS) policies scoped to `auth.uid()`
+
+### SQL Migration (for existing projects)
+Run this in Supabase SQL Editor:
 
 ```sql
 create extension if not exists "uuid-ossp";
@@ -167,100 +192,17 @@ to authenticated
 using (auth.uid() = user_id);
 ```
 
-### Minimum `receipts` table
-
-```sql
-create table if not exists public.receipts (
-  id bigint generated always as identity primary key,
-  user_id uuid not null references auth.users (id) on delete cascade,
-  store_name text not null,
-  total numeric(10,2) not null,
-  category text,
-  receipt_date date,
-  invoice_enabled boolean not null default false,
-  reimbursement_received_enabled boolean not null default false,
-  reimbursement_received_amount numeric(10,2),
-  created_at timestamptz not null default now()
-);
-```
-
-### Minimum `profiles` table
-
-```sql
-create table if not exists public.profiles (
-  id uuid primary key references auth.users (id) on delete cascade,
-  username text not null,
-  created_at timestamptz not null default now()
-);
-```
-
-### Notes on login rate limiting
-
-- The app includes client-side throttling (localStorage-based) for repeated failed password attempts.
-- For strong production security, also enable and tune Supabase Auth server-side protections in your project Auth settings.
-
-## Available Scripts
-
-- `npm run dev`: Start local dev server
-- `npm run build`: Build for production
-- `npm run preview`: Preview production build
-- `npm run lint`: Run ESLint
-
 ## Project Structure
-
 ```text
 src/
   App.jsx
   App.css
   index.css
+  assets/
+  components/
   lib/
     gemini.js
     supabase.js
-```
-
-## How To Modify
-
-### Change AI extraction behavior
-
-- Edit prompt/model logic in `src/lib/gemini.js`.
-- Keep the JSON shape compatible with the app fields:
-  - `store_name`
-  - `total`
-  - `category`
-  - `receipt_date` (YYYY-MM-DD or null)
-
-### Change database integration
-
-- Update Supabase client setup in `src/lib/supabase.js`.
-- Update data fetch/insert/delete flow in `src/App.jsx`.
-
-### Change categories or UI behavior
-
-- Category definitions and icon mapping are in `src/App.jsx`.
-- Theme styles and layout are in `src/App.css` and `src/index.css`.
-
-## Production Notes
-
-- Gemini SDK loading is dynamically split to reduce initial bundle size.
-- Large category image assets can still affect total download size. Consider converting PNG files in `src/assets` to WebP for smaller payloads.
-
-## Docker
-
-Docker is not required for this project.
-
-This app runs as a standard frontend with environment variables and hosted services (Supabase + Gemini). If you later want containerized workflows, Docker can be added, but it is intentionally omitted here to keep setup simple.
-
-## Troubleshooting
-
-- Blank or failed network calls:
-  - Verify `.env` variable names and values.
-  - Restart dev server after changing `.env`.
-- Scan fails:
-  - Confirm `VITE_GEMINI_API_KEY` is valid and has access to the configured model.
-- Save/delete fails:
-  - Confirm Supabase table/function exist.
-  - Verify Supabase RLS policies and anon key permissions.
 
 ## License
-
 See `LICENSE`.
