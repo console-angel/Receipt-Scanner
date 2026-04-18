@@ -30,6 +30,7 @@ const THEME_STORAGE_KEY = 'receiptiFy-theme';
 const LOGIN_ATTEMPTS_STORAGE_KEY = 'receiptiFy-login-attempts';
 const LOGIN_ATTEMPT_LIMIT = 5;
 const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const RECEIPT_IMAGE_BUCKET = 'receipt-images';
 
 const getCategoryStyle = (cat) => categoryIcons[cat] || categoryIcons.Other;
 
@@ -159,6 +160,54 @@ const registerFailedLoginAttempt = () => {
 
   saveAttemptState(nextState);
   return getLoginRateLimitStatus();
+};
+
+const normalizeReceiptText = (value) => String(value || '').trim().toLowerCase();
+
+const normalizeReceiptAmount = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return '0.00';
+  return parsed.toFixed(2);
+};
+
+const normalizeReceiptDateKey = (value) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+  const dd = String(parsed.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const getCsvSafeText = (value, fallback = 'N/A') => {
+  const text = String(value ?? '').trim();
+  return text || fallback;
+};
+
+const getCsvSafeDate = (value) => {
+  const normalized = normalizeReceiptDateKey(value);
+  if (!normalized) return 'N/A';
+
+  // Prefix with apostrophe so spreadsheet tools keep this as text and avoid ###### rendering.
+  return `'${normalized}`;
+};
+
+const sanitizeFileExtension = (filename, fallbackMimeType) => {
+  const rawExt = String(filename || '').split('.').pop()?.toLowerCase();
+  if (rawExt && /^[a-z0-9]+$/.test(rawExt)) return rawExt;
+  if (fallbackMimeType === 'image/png') return 'png';
+  if (fallbackMimeType === 'image/jpeg') return 'jpg';
+  return 'jpg';
+};
+
+const dataUrlToBlob = async (dataUrl) => {
+  const response = await fetch(dataUrl);
+  return response.blob();
 };
 
 function Logo() {
@@ -320,6 +369,7 @@ function AuthGate({
 function App() {
   const [dragActive, setDragActive] = useState(false);
   const [uploadedImage, setUploadedImage] = useState(null);
+  const [uploadedFile, setUploadedFile] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [receipts, setReceipts] = useState([]);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -343,6 +393,12 @@ function App() {
   const [settingsPassword, setSettingsPassword] = useState('');
   const [settingsMessage, setSettingsMessage] = useState('');
   const [settingsBusy, setSettingsBusy] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState('');
+  const [activeReceipt, setActiveReceipt] = useState(null);
+  const [activeReceiptImageUrl, setActiveReceiptImageUrl] = useState('');
+  const [receiptDraft, setReceiptDraft] = useState({ store_name: '', total: '', category: 'Other', receipt_date: '' });
+  const [receiptModalBusy, setReceiptModalBusy] = useState(false);
+  const [receiptModalMessage, setReceiptModalMessage] = useState('');
 
   const inputRef = useRef(null);
 
@@ -449,6 +505,16 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [settingsMessage]);
 
+  useEffect(() => {
+    if (!uploadMessage) return undefined;
+
+    const timer = window.setTimeout(() => {
+      setUploadMessage('');
+    }, 3500);
+
+    return () => window.clearTimeout(timer);
+  }, [uploadMessage]);
+
   const handleAuthSubmit = async (event) => {
     event.preventDefault();
     setAuthError('');
@@ -517,6 +583,8 @@ function App() {
 
   const handleFile = (file) => {
     if (file.type.match(/image\/(jpeg|jpg|png)/)) {
+      setUploadMessage('');
+      setUploadedFile(file);
       const reader = new FileReader();
       reader.onload = (event) => setUploadedImage(event.target.result);
       reader.readAsDataURL(file);
@@ -527,16 +595,143 @@ function App() {
 
   const removeImage = () => {
     setUploadedImage(null);
+    setUploadedFile(null);
     if (inputRef.current) inputRef.current.value = '';
+  };
+
+  const closeReceiptModal = () => {
+    setActiveReceipt(null);
+    setActiveReceiptImageUrl('');
+    setReceiptModalMessage('');
+    setReceiptModalBusy(false);
+  };
+
+  const openReceiptModal = async (receipt) => {
+    setActiveReceipt(receipt);
+    setReceiptModalMessage('');
+    setReceiptDraft({
+      store_name: receipt.store_name || '',
+      total: Number(receipt.total || 0).toFixed(2),
+      category: receipt.category || 'Other',
+      receipt_date: normalizeReceiptDateKey(receipt.receipt_date) || '',
+    });
+
+    if (!receipt.image_path) {
+      setActiveReceiptImageUrl('');
+      return;
+    }
+
+    const { data, error } = await supabase.storage.from(RECEIPT_IMAGE_BUCKET).createSignedUrl(receipt.image_path, 60 * 10);
+    if (error) {
+      console.error('Create signed URL error:', error);
+      setActiveReceiptImageUrl('');
+      setReceiptModalMessage('Receipt image is not available. Check storage bucket policies.');
+      return;
+    }
+
+    setActiveReceiptImageUrl(data?.signedUrl || '');
+  };
+
+  const handleSaveReceiptEdits = async (event) => {
+    event.preventDefault();
+    if (!activeReceipt?.id || !user?.id) return;
+
+    const nextStore = receiptDraft.store_name.trim();
+    const nextTotal = Number(receiptDraft.total);
+    const nextDate = normalizeReceiptDateKey(receiptDraft.receipt_date);
+
+    if (!nextStore) {
+      setReceiptModalMessage('Store name is required.');
+      return;
+    }
+
+    if (!Number.isFinite(nextTotal) || nextTotal < 0) {
+      setReceiptModalMessage('Total must be a valid positive number.');
+      return;
+    }
+
+    if (!nextDate) {
+      setReceiptModalMessage('Please provide a valid receipt date.');
+      return;
+    }
+
+    setReceiptModalBusy(true);
+    setReceiptModalMessage('');
+
+    const payload = {
+      store_name: nextStore,
+      total: nextTotal,
+      category: receiptDraft.category || 'Other',
+      receipt_date: nextDate,
+    };
+
+    const { data, error } = await supabase
+      .from('receipts')
+      .update(payload)
+      .eq('id', activeReceipt.id)
+      .eq('user_id', user.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Update receipt error:', error);
+      setReceiptModalMessage('Unable to save receipt changes. Please try again.');
+      setReceiptModalBusy(false);
+      return;
+    }
+
+    const nextReceipts = receipts.map((receipt) => (receipt.id === activeReceipt.id ? { ...receipt, ...data } : receipt));
+    setReceipts(nextReceipts);
+    localStorage.setItem(getReceiptsCacheKey(user.id), JSON.stringify(nextReceipts));
+    setActiveReceipt((previous) => (previous ? { ...previous, ...data } : previous));
+    setReceiptModalMessage('Receipt updated successfully.');
+    setReceiptModalBusy(false);
   };
 
   const processReceipt = async () => {
     if (!uploadedImage || !user?.id) return;
 
+    setUploadMessage('');
     setIsProcessing(true);
+    let uploadedFilePath = null;
     try {
       const mimeType = uploadedImage.split(';')[0].split(':')[1];
       const extractedData = await scanReceipt(uploadedImage, mimeType);
+
+      const incomingStore = normalizeReceiptText(extractedData.store_name);
+      const incomingCategory = normalizeReceiptText(extractedData.category || 'Other');
+      const incomingAmount = normalizeReceiptAmount(extractedData.total);
+      const incomingDate = normalizeReceiptDateKey(extractedData.receipt_date);
+
+      const duplicateExists = receipts.some((receipt) => {
+        const sameStore = normalizeReceiptText(receipt.store_name) === incomingStore;
+        const sameCategory = normalizeReceiptText(receipt.category || 'Other') === incomingCategory;
+        const sameAmount = normalizeReceiptAmount(receipt.total) === incomingAmount;
+        const existingDate = normalizeReceiptDateKey(receipt.receipt_date);
+        const sameDate = incomingDate === existingDate;
+
+        return sameStore && sameCategory && sameAmount && sameDate;
+      });
+
+      if (duplicateExists) {
+        setUploadMessage('Receipt has already been added.');
+        removeImage();
+        return;
+      }
+
+      const sourceFile = uploadedFile || new File([await dataUrlToBlob(uploadedImage)], `receipt-${Date.now()}.jpg`, { type: mimeType });
+      const fileExt = sanitizeFileExtension(sourceFile.name, mimeType);
+      const filePath = `${user.id}/${crypto.randomUUID()}.${fileExt}`;
+      uploadedFilePath = filePath;
+
+      const { error: uploadError } = await supabase.storage.from(RECEIPT_IMAGE_BUCKET).upload(filePath, sourceFile, {
+        contentType: sourceFile.type || mimeType,
+        upsert: false,
+      });
+
+      if (uploadError) {
+        throw new Error('Failed to upload receipt image. Ensure the receipt-images bucket and policies are configured.');
+      }
 
       const { data, error } = await supabase
         .from('receipts')
@@ -547,6 +742,8 @@ function App() {
             total: extractedData.total,
             category: extractedData.category,
             receipt_date: extractedData.receipt_date,
+            image_path: filePath,
+            image_mime_type: sourceFile.type || mimeType,
           },
         ])
         .select();
@@ -562,6 +759,12 @@ function App() {
       removeImage();
       setActiveTab('dashboard');
     } catch (error) {
+      if (uploadedFilePath) {
+        const { error: rollbackError } = await supabase.storage.from(RECEIPT_IMAGE_BUCKET).remove([uploadedFilePath]);
+        if (rollbackError) {
+          console.warn('Rollback image delete warning:', rollbackError.message);
+        }
+      }
       console.error(error);
       alert(error.message);
     } finally {
@@ -571,6 +774,15 @@ function App() {
 
   const deleteReceipt = async (id) => {
     if (!user?.id) return;
+
+    const receiptToDelete = receipts.find((receipt) => receipt.id === id);
+
+    if (receiptToDelete?.image_path) {
+      const { error: storageDeleteError } = await supabase.storage.from(RECEIPT_IMAGE_BUCKET).remove([receiptToDelete.image_path]);
+      if (storageDeleteError) {
+        console.warn('Storage delete warning:', storageDeleteError.message);
+      }
+    }
 
     const { error } = await supabase.from('receipts').delete().eq('id', id).eq('user_id', user.id);
     if (error) {
@@ -594,16 +806,17 @@ function App() {
 
     const lines = [];
     lines.push('ALL RECEIPTS');
-    lines.push(['Store / Place', 'Category', 'Total ($)', 'Date'].map(esc).join(','));
+    lines.push(['Receipt ID', 'Store / Place', 'Category', 'Total ($)', 'Receipt Date'].map(esc).join(','));
 
     filteredReceipts.forEach((receipt) => {
       const sourceDate = getReceiptDateValue(receipt);
       lines.push(
         [
-          receipt.store_name,
-          receipt.category || 'Other',
-          Number(receipt.total).toFixed(2),
-          sourceDate ? formatReceiptDate(sourceDate) : 'N/A',
+          getCsvSafeText(receipt.id),
+          getCsvSafeText(receipt.store_name),
+          getCsvSafeText(receipt.category, 'Other'),
+          normalizeReceiptAmount(receipt.total),
+          getCsvSafeDate(sourceDate),
         ]
           .map(esc)
           .join(','),
@@ -910,24 +1123,41 @@ function App() {
                           {items.map((item) => (
                             <li key={item.id} className="receipt-item">
                               <div className="receipt-info">
-                                <span className="store-name">{item.store_name}</span>
-                                <span className="date">{formatReceiptDate(getReceiptDateValue(item))}</span>
+                                <button className="receipt-info-btn" onClick={() => openReceiptModal(item)} title="View receipt details" type="button">
+                                  <span className="store-name">{item.store_name}</span>
+                                  <span className="date">{formatReceiptDate(getReceiptDateValue(item))}</span>
+                                </button>
                               </div>
                               <div className="receipt-actions">
                                 <span className="total">${Number(item.total).toFixed(2)}</span>
-                                <button
-                                  className="delete-btn"
-                                  onClick={() => deleteReceipt(item.id)}
-                                  aria-label={`Delete ${item.store_name}`}
-                                  title="Delete receipt"
-                                >
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <polyline points="3 6 5 6 21 6" />
-                                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                                    <path d="M10 11v6M14 11v6" />
-                                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                                  </svg>
-                                </button>
+                                <div className="receipt-icon-stack">
+                                  <button
+                                    className="edit-btn"
+                                    onClick={() => openReceiptModal(item)}
+                                    aria-label={`Edit ${item.store_name}`}
+                                    title="Edit receipt"
+                                    type="button"
+                                  >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M12 20h9" />
+                                      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    className="delete-btn"
+                                    onClick={() => deleteReceipt(item.id)}
+                                    aria-label={`Delete ${item.store_name}`}
+                                    title="Delete receipt"
+                                    type="button"
+                                  >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <polyline points="3 6 5 6 21 6" />
+                                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                                      <path d="M10 11v6M14 11v6" />
+                                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                                    </svg>
+                                  </button>
+                                </div>
                               </div>
                             </li>
                           ))}
@@ -947,6 +1177,7 @@ function App() {
                   <h2>Scan a Receipt</h2>
                   <p>Upload a photo and our AI will extract the store, total, and spending category automatically.</p>
                 </div>
+                {uploadMessage && <p className="upload-message">{uploadMessage}</p>}
                 {!uploadedImage ? (
                   <div
                     className={`upload-zone ${dragActive ? 'active' : ''}`}
@@ -1083,6 +1314,92 @@ function App() {
               </div>
 
               {settingsMessage && <p className="settings-message">{settingsMessage}</p>}
+            </div>
+          )}
+
+          {activeReceipt && (
+            <div className="receipt-modal-backdrop" onClick={closeReceiptModal}>
+              <div className="receipt-modal" onClick={(event) => event.stopPropagation()}>
+                <div className="receipt-modal-header">
+                  <h3>Receipt Details</h3>
+                  <button className="modal-close-btn" onClick={closeReceiptModal} type="button" aria-label="Close receipt details">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="receipt-modal-grid">
+                  <div className="receipt-modal-image-wrap">
+                    {activeReceiptImageUrl ? (
+                      <img src={activeReceiptImageUrl} alt="Receipt" className="receipt-modal-image" />
+                    ) : (
+                      <div className="receipt-modal-image-empty">No receipt image found.</div>
+                    )}
+                  </div>
+
+                  <form className="receipt-modal-form" onSubmit={handleSaveReceiptEdits}>
+                    <label>
+                      Store / Place
+                      <input
+                        type="text"
+                        value={receiptDraft.store_name}
+                        onChange={(event) => setReceiptDraft((prev) => ({ ...prev, store_name: event.target.value }))}
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      Total ($)
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={receiptDraft.total}
+                        onChange={(event) => setReceiptDraft((prev) => ({ ...prev, total: event.target.value }))}
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      Category
+                      <select
+                        value={receiptDraft.category}
+                        onChange={(event) => setReceiptDraft((prev) => ({ ...prev, category: event.target.value }))}
+                      >
+                        <option value="Food">Food</option>
+                        <option value="Entertainment">Entertainment</option>
+                        <option value="Transport">Transport</option>
+                        <option value="Utilities">Utilities</option>
+                        <option value="Shopping">Shopping</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      Receipt Date
+                      <input
+                        type="date"
+                        value={receiptDraft.receipt_date}
+                        onChange={(event) => setReceiptDraft((prev) => ({ ...prev, receipt_date: event.target.value }))}
+                        required
+                      />
+                    </label>
+
+                    {receiptModalMessage && <p className="receipt-modal-message">{receiptModalMessage}</p>}
+
+                    <div className="receipt-modal-actions">
+                      <button className="btn-secondary" type="button" onClick={closeReceiptModal}>
+                        Close
+                      </button>
+                      <button className="btn-primary" type="submit" disabled={receiptModalBusy}>
+                        {receiptModalBusy ? 'Saving…' : 'Save Changes'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
             </div>
           )}
         </main>
