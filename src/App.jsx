@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import { scanReceipt } from './lib/gemini';
-import * as XLSX from 'xlsx';
 import './App.css';
 
 import imgFood          from './assets/category_food.png';
@@ -164,37 +163,51 @@ function App() {
   const totalSpend = receipts.reduce((sum, r) => sum + Number(r.total || 0), 0);
   const topCategory = Object.entries(categorizedReceipts).sort((a, b) => b[1].length - a[1].length)[0]?.[0] || '—';
 
-  const exportToExcel = () => {
+  const exportToCSV = () => {
     if (receipts.length === 0) {
       alert('No receipts to export.');
       return;
     }
 
-    const wb = XLSX.utils.book_new();
+    // Helper: escape a cell value for CSV
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
-    // ── Sheet 1: All Receipts ──────────────────────────────
-    const receiptRows = receipts.map(r => ({
-      'Store / Place':  r.store_name,
-      'Category':       r.category || 'Other',
-      'Total ($)':      Number(r.total).toFixed(2),
-      'Date':           new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    }));
-    const wsAll = XLSX.utils.json_to_sheet(receiptRows);
-    wsAll['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 12 }, { wch: 18 }];
-    XLSX.utils.book_append_sheet(wb, wsAll, 'All Receipts');
+    const lines = [];
 
-    // ── Sheet 2: Summary by Category ──────────────────────
-    const summaryRows = Object.entries(categorizedReceipts).map(([cat, items]) => ({
-      'Category':        cat,
-      '# of Receipts':  items.length,
-      'Total Spent ($)': items.reduce((s, i) => s + Number(i.total || 0), 0).toFixed(2),
-    }));
-    summaryRows.push({ 'Category': 'TOTAL', '# of Receipts': receipts.length, 'Total Spent ($)': totalSpend.toFixed(2) });
-    const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
-    wsSummary['!cols'] = [{ wch: 20 }, { wch: 16 }, { wch: 18 }];
-    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary by Category');
+    // ── Section 1: All Receipts ───────────────────────────
+    lines.push('ALL RECEIPTS');
+    lines.push(['Store / Place', 'Category', 'Total ($)', 'Date'].map(esc).join(','));
+    receipts.forEach(r => {
+      lines.push([
+        r.store_name,
+        r.category || 'Other',
+        Number(r.total).toFixed(2),
+        new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      ].map(esc).join(','));
+    });
 
-    XLSX.writeFile(wb, `BudgetScan_Export_${new Date().toISOString().slice(0,10)}.xlsx`);
+    // blank separator
+    lines.push('');
+
+    // ── Section 2: Summary by Category ───────────────────
+    lines.push('SUMMARY BY CATEGORY');
+    lines.push(['Category', '# of Receipts', 'Total Spent ($)'].map(esc).join(','));
+    Object.entries(categorizedReceipts).forEach(([cat, items]) => {
+      const catTotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
+      lines.push([cat, items.length, catTotal.toFixed(2)].map(esc).join(','));
+    });
+    lines.push(['TOTAL', receipts.length, totalSpend.toFixed(2)].map(esc).join(','));
+
+    const csvContent = lines.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href     = url;
+    link.download = `BudgetScan_Export_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -208,13 +221,13 @@ function App() {
           </div>
           <div className="topbar-actions">
             {activeTab === 'dashboard' && receipts.length > 0 && (
-              <button className="topbar-export" onClick={exportToExcel}>
+              <button className="topbar-export" onClick={exportToCSV}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                   <polyline points="7 10 12 15 17 10"/>
                   <line x1="12" y1="15" x2="12" y2="3"/>
                 </svg>
-                Export Excel
+                Export CSV
               </button>
             )}
             <button className="topbar-cta" onClick={() => setActiveTab('upload')}>
