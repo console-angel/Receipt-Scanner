@@ -104,7 +104,10 @@ create table if not exists public.profiles (
 
 alter table public.receipts
 add column if not exists user_id uuid references auth.users (id) on delete cascade,
-add column if not exists receipt_date date;
+add column if not exists receipt_date date,
+add column if not exists invoice_enabled boolean not null default false,
+add column if not exists reimbursement_received_enabled boolean not null default false,
+add column if not exists reimbursement_received_amount numeric(10,2);
 
 alter table public.receipts
 alter column user_id set not null;
@@ -174,6 +177,9 @@ create table if not exists public.receipts (
   total numeric(10,2) not null,
   category text,
   receipt_date date,
+  invoice_enabled boolean not null default false,
+  reimbursement_received_enabled boolean not null default false,
+  reimbursement_received_amount numeric(10,2),
   created_at timestamptz not null default now()
 );
 ```

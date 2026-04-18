@@ -16,14 +16,25 @@ const categoryIcons = {
   Transport: { img: imgTransport, color: '#4F6172', bg: '#E7EEF6' },
   Utilities: { img: imgUtilities, color: '#6C7D8F', bg: '#EAF1F8' },
   Shopping: { img: imgShopping, color: '#5B6A79', bg: '#E8EFF7' },
+  Invoice: { img: imgOther, color: '#4F46E5', bg: '#EEF0FF' },
   Other: { img: imgOther, color: '#A39BA8', bg: '#EDF5FC' },
 };
+
+const DEFAULT_CATEGORY_OPTIONS = ['Food', 'Entertainment', 'Transport', 'Utilities', 'Shopping', 'Invoice', 'Other'];
+const INVOICE_CATEGORY_OPTIONS = ['Food', 'Shopping', 'Utilities', 'Invoice', 'Other'];
 
 const FILTER_MODES = {
   ALL: 'all',
   THIS_MONTH: 'thisMonth',
   LAST_MONTH: 'lastMonth',
   LAST_3_MONTHS: 'last3Months',
+};
+
+const ANALYTICS_MODES = {
+  LAST_MONTH: 'lastMonth',
+  LAST_3_MONTHS: 'last3Months',
+  ALL_TIME: 'allTime',
+  SPECIFIC_YEAR: 'specificYear',
 };
 
 const THEME_STORAGE_KEY = 'receiptiFy-theme';
@@ -65,6 +76,27 @@ const formatReceiptDate = (value) => {
 const getCurrentMonthKey = () => {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const getCurrentYear = () => new Date().getFullYear();
+
+const getReceiptYear = (receipt) => {
+  const rawDate = getReceiptDateValue(receipt);
+  if (!rawDate) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+    return Number(rawDate.slice(0, 4));
+  }
+
+  const parsed = new Date(rawDate);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.getFullYear();
+};
+
+const formatMonthLabel = (monthKey) => {
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) return monthKey;
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 };
 
 const getMonthIndex = (monthKey) => {
@@ -170,6 +202,8 @@ const normalizeReceiptAmount = (value) => {
   return parsed.toFixed(2);
 };
 
+const getCategoryOptions = (isInvoice) => (isInvoice ? INVOICE_CATEGORY_OPTIONS : DEFAULT_CATEGORY_OPTIONS);
+
 const getReceiptEffectiveSpend = (receipt) => {
   const baseTotal = Number(receipt?.total || 0);
   if (!receipt?.split_enabled) return baseTotal;
@@ -178,6 +212,20 @@ const getReceiptEffectiveSpend = (receipt) => {
   if (!Number.isFinite(splitAmount) || splitAmount < 0) return baseTotal;
 
   return splitAmount;
+};
+
+const isInvoiceReceipt = (receipt) => Boolean(receipt?.invoice_enabled);
+
+const getInvoiceEffectiveReimbursement = (receipt) => {
+  if (!isInvoiceReceipt(receipt)) return 0;
+
+  if (receipt?.reimbursement_received_enabled) {
+    const parsed = Number(receipt?.reimbursement_received_amount);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+
+  const estimated = Number(receipt?.total || 0);
+  return Number.isFinite(estimated) && estimated >= 0 ? estimated : 0;
 };
 
 const normalizeReceiptDateKey = (value) => {
@@ -257,6 +305,17 @@ function Sidebar({ activeTab, setActiveTab }) {
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
           <polyline points="17 8 12 3 7 8" />
           <line x1="12" y1="3" x2="12" y2="15" />
+        </svg>
+      ),
+    },
+    {
+      id: 'analytics',
+      label: 'Analytics',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10" />
+          <line x1="12" y1="20" x2="12" y2="4" />
+          <line x1="6" y1="20" x2="6" y2="14" />
         </svg>
       ),
     },
@@ -384,6 +443,8 @@ function App() {
   const [receipts, setReceipts] = useState([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [filterMode, setFilterMode] = useState(FILTER_MODES.ALL);
+  const [analyticsMode, setAnalyticsMode] = useState(ANALYTICS_MODES.LAST_3_MONTHS);
+  const [selectedAnalyticsYear, setSelectedAnalyticsYear] = useState(getCurrentYear());
 
   const [theme, setTheme] = useState(() => getStoredTheme());
 
@@ -413,6 +474,9 @@ function App() {
     receipt_date: '',
     split_enabled: false,
     split_amount: '',
+    invoice_enabled: false,
+    reimbursement_received_enabled: false,
+    reimbursement_received_amount: '',
   });
   const [receiptModalBusy, setReceiptModalBusy] = useState(false);
   const [receiptModalMessage, setReceiptModalMessage] = useState('');
@@ -636,6 +700,12 @@ function App() {
         receipt.split_amount !== null && receipt.split_amount !== undefined
           ? normalizeReceiptAmount(receipt.split_amount)
           : '',
+      invoice_enabled: Boolean(receipt.invoice_enabled),
+      reimbursement_received_enabled: Boolean(receipt.reimbursement_received_enabled),
+      reimbursement_received_amount:
+        receipt.reimbursement_received_amount !== null && receipt.reimbursement_received_amount !== undefined
+          ? normalizeReceiptAmount(receipt.reimbursement_received_amount)
+          : '',
     });
 
     if (!receipt.image_path) {
@@ -662,6 +732,7 @@ function App() {
     const nextTotal = Number(receiptDraft.total);
     const nextDate = normalizeReceiptDateKey(receiptDraft.receipt_date);
     const splitEnabled = Boolean(receiptDraft.split_enabled);
+    const invoiceEnabled = Boolean(receiptDraft.invoice_enabled);
 
     if (!nextStore) {
       setReceiptModalMessage('Store name is required.');
@@ -679,7 +750,7 @@ function App() {
     }
 
     let nextSplitAmount = null;
-    if (splitEnabled) {
+    if (!invoiceEnabled && splitEnabled) {
       const parsedSplit = Number(receiptDraft.split_amount);
       if (!Number.isFinite(parsedSplit) || parsedSplit < 0) {
         setReceiptModalMessage('Split amount must be a valid positive number.');
@@ -692,6 +763,21 @@ function App() {
       nextSplitAmount = parsedSplit;
     }
 
+    let nextReimbursementAmount = null;
+    const reimbursementReceivedEnabled = Boolean(receiptDraft.reimbursement_received_enabled);
+    if (invoiceEnabled && reimbursementReceivedEnabled) {
+      const parsedReimbursement = Number(receiptDraft.reimbursement_received_amount);
+      if (!Number.isFinite(parsedReimbursement) || parsedReimbursement < 0) {
+        setReceiptModalMessage('Reimbursement received must be a valid positive number.');
+        return;
+      }
+      if (parsedReimbursement > nextTotal) {
+        setReceiptModalMessage('Reimbursement received cannot be greater than estimated reimbursement total.');
+        return;
+      }
+      nextReimbursementAmount = parsedReimbursement;
+    }
+
     setReceiptModalBusy(true);
     setReceiptModalMessage('');
 
@@ -700,8 +786,11 @@ function App() {
       total: nextTotal,
       category: receiptDraft.category || 'Other',
       receipt_date: nextDate,
-      split_enabled: splitEnabled,
-      split_amount: splitEnabled ? nextSplitAmount : null,
+      split_enabled: invoiceEnabled ? false : splitEnabled,
+      split_amount: invoiceEnabled ? null : splitEnabled ? nextSplitAmount : null,
+      invoice_enabled: invoiceEnabled,
+      reimbursement_received_enabled: invoiceEnabled ? reimbursementReceivedEnabled : false,
+      reimbursement_received_amount: invoiceEnabled ? (reimbursementReceivedEnabled ? nextReimbursementAmount : null) : null,
     };
 
     const { data, error } = await supabase
@@ -783,6 +872,9 @@ function App() {
             receipt_date: extractedData.receipt_date,
             split_enabled: false,
             split_amount: null,
+            invoice_enabled: false,
+            reimbursement_received_enabled: false,
+            reimbursement_received_amount: null,
             image_path: filePath,
             image_mime_type: sourceFile.type || mimeType,
           },
@@ -949,6 +1041,7 @@ function App() {
   };
 
   const currentMonthKey = getCurrentMonthKey();
+  const currentYear = getCurrentYear();
   const thisMonthKey = currentMonthKey;
   const lastMonthKey = shiftMonthKey(currentMonthKey, -1);
   const last3MonthsStartKey = shiftMonthKey(currentMonthKey, -2);
@@ -978,9 +1071,15 @@ function App() {
     return accumulator;
   }, {});
 
-  const totalSpend = filteredReceipts.reduce((sum, receipt) => sum + getReceiptEffectiveSpend(receipt), 0);
+  const totalExpenses = filteredReceipts
+    .filter((receipt) => !isInvoiceReceipt(receipt))
+    .reduce((sum, receipt) => sum + getReceiptEffectiveSpend(receipt), 0);
+  const totalReimbursements = filteredReceipts
+    .filter((receipt) => isInvoiceReceipt(receipt))
+    .reduce((sum, receipt) => sum + getInvoiceEffectiveReimbursement(receipt), 0);
+  const totalSpend = totalExpenses;
+  const totalOutOfPocket = totalExpenses - totalReimbursements;
   const topCategory = Object.entries(categorizedReceipts).sort((a, b) => b[1].length - a[1].length)[0]?.[0] || '—';
-  const averageSpend = filteredReceipts.length > 0 ? totalSpend / filteredReceipts.length : 0;
   const categorySummary = Object.entries(categorizedReceipts)
     .map(([name, items]) => ({
       name,
@@ -991,6 +1090,130 @@ function App() {
 
   const largestCategoryTotal = categorySummary[0]?.total || 0;
   const topSpendShare = totalSpend > 0 && largestCategoryTotal > 0 ? (largestCategoryTotal / totalSpend) * 100 : 0;
+
+  const analyticsYearOptions = Array.from(
+    new Set(receipts.map((receipt) => getReceiptYear(receipt)).filter((year) => Number.isFinite(year))),
+  ).sort((a, b) => b - a);
+
+  const analyticsYears = analyticsYearOptions.length > 0 ? analyticsYearOptions : [currentYear];
+
+  const analyticsFilteredReceipts = receipts.filter((receipt) => {
+    const receiptMonthKey = getReceiptMonthKey(receipt);
+    const receiptMonthIndex = getMonthIndex(receiptMonthKey);
+    const receiptYear = getReceiptYear(receipt);
+
+    if (analyticsMode === ANALYTICS_MODES.ALL_TIME) return true;
+    if (analyticsMode === ANALYTICS_MODES.SPECIFIC_YEAR) return receiptYear === selectedAnalyticsYear;
+
+    if (!receiptMonthKey || receiptMonthIndex === null) return false;
+
+    if (analyticsMode === ANALYTICS_MODES.LAST_MONTH) {
+      return receiptMonthKey === lastMonthKey;
+    }
+
+    if (analyticsMode === ANALYTICS_MODES.LAST_3_MONTHS) {
+      const startIndex = getMonthIndex(last3MonthsStartKey);
+      const endIndex = getMonthIndex(thisMonthKey);
+      return startIndex !== null && endIndex !== null && receiptMonthIndex >= startIndex && receiptMonthIndex <= endIndex;
+    }
+
+    return true;
+  });
+
+  const analyticsExpenseReceipts = analyticsFilteredReceipts.filter((receipt) => !isInvoiceReceipt(receipt));
+  const analyticsInvoiceReceipts = analyticsFilteredReceipts.filter((receipt) => isInvoiceReceipt(receipt));
+
+  const analyticsExpenseTotal = analyticsExpenseReceipts.reduce((sum, receipt) => sum + getReceiptEffectiveSpend(receipt), 0);
+  const analyticsReimbursementTotal = analyticsInvoiceReceipts.reduce((sum, receipt) => sum + getInvoiceEffectiveReimbursement(receipt), 0);
+  const analyticsNetOutOfPocket = analyticsExpenseTotal - analyticsReimbursementTotal;
+
+  const analyticsExpenseCategorySummary = Object.entries(
+    analyticsExpenseReceipts.reduce((accumulator, receipt) => {
+      const category = receipt.category || 'Other';
+      if (!accumulator[category]) {
+        accumulator[category] = { count: 0, total: 0 };
+      }
+      accumulator[category].count += 1;
+      accumulator[category].total += getReceiptEffectiveSpend(receipt);
+      return accumulator;
+    }, {}),
+  )
+    .map(([name, stats]) => ({
+      name,
+      count: stats.count,
+      total: stats.total,
+      pct: analyticsExpenseTotal > 0 ? (stats.total / analyticsExpenseTotal) * 100 : 0,
+      color: getCategoryStyle(name).color,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const analyticsReimbursementCategorySummary = Object.entries(
+    analyticsInvoiceReceipts.reduce((accumulator, receipt) => {
+      const category = receipt.category || 'Other';
+      if (!accumulator[category]) {
+        accumulator[category] = { count: 0, total: 0 };
+      }
+      accumulator[category].count += 1;
+      accumulator[category].total += getInvoiceEffectiveReimbursement(receipt);
+      return accumulator;
+    }, {}),
+  )
+    .map(([name, stats]) => ({
+      name,
+      count: stats.count,
+      total: stats.total,
+      pct: analyticsReimbursementTotal > 0 ? (stats.total / analyticsReimbursementTotal) * 100 : 0,
+      color: getCategoryStyle(name).color,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const buildPieGradient = (series) => {
+    if (series.length === 0) return '#d3dde8';
+
+    let cursor = 0;
+    const stops = series.map((entry) => {
+      const start = cursor;
+      cursor += entry.pct;
+      return `${entry.color} ${start}% ${cursor}%`;
+    });
+
+    return stops.join(', ');
+  };
+
+  const analyticsExpensePieGradient = buildPieGradient(analyticsExpenseCategorySummary);
+  const analyticsReimbursementPieGradient = buildPieGradient(analyticsReimbursementCategorySummary);
+
+  const analyticsMonthMap = analyticsFilteredReceipts.reduce((accumulator, receipt) => {
+    const monthKey = getReceiptMonthKey(receipt);
+    if (!monthKey) return accumulator;
+
+    if (!accumulator[monthKey]) {
+      accumulator[monthKey] = { expense: 0, reimbursement: 0 };
+    }
+
+    if (isInvoiceReceipt(receipt)) {
+      accumulator[monthKey].reimbursement += getInvoiceEffectiveReimbursement(receipt);
+    } else {
+      accumulator[monthKey].expense += getReceiptEffectiveSpend(receipt);
+    }
+
+    return accumulator;
+  }, {});
+
+  const analyticsMonthSeries = Object.keys(analyticsMonthMap)
+    .sort((a, b) => (getMonthIndex(a) ?? 0) - (getMonthIndex(b) ?? 0))
+    .map((monthKey) => ({
+      key: monthKey,
+      label: formatMonthLabel(monthKey),
+      expense: analyticsMonthMap[monthKey].expense,
+      reimbursement: analyticsMonthMap[monthKey].reimbursement,
+    }));
+
+  const analyticsChartSeries = analyticsMonthSeries.length > 12 ? analyticsMonthSeries.slice(-12) : analyticsMonthSeries;
+  const analyticsMaxMonthTotal = Math.max(
+    ...analyticsChartSeries.map((entry) => Math.max(entry.expense, entry.reimbursement)),
+    0,
+  );
 
   if (authLoading) {
     return (
@@ -1024,7 +1247,15 @@ function App() {
 
       <div className="app-body">
         <header className="topbar">
-          <div className="topbar-title">{activeTab === 'dashboard' ? 'Dashboard' : activeTab === 'upload' ? 'Scan Receipt' : 'Settings'}</div>
+          <div className="topbar-title">
+            {activeTab === 'dashboard'
+              ? 'Dashboard'
+              : activeTab === 'analytics'
+                ? 'Analytics'
+                : activeTab === 'upload'
+                  ? 'Scan Receipt'
+                  : 'Settings'}
+          </div>
           <div className="topbar-actions">
             <div className="user-pill">
               <strong>{profileLoaded ? displayUsername : '\u00A0'}</strong>
@@ -1094,7 +1325,7 @@ function App() {
                   <h2>Spending rhythm at a glance</h2>
                   <p>
                     {filteredReceipts.length > 0
-                      ? `Your top spending category is ${categorySummary[0]?.name || 'Other'} with ${topSpendShare.toFixed(0)}% of all receipts.`
+                      ? `Top expense category is ${categorySummary[0]?.name || 'Other'} with ${topSpendShare.toFixed(0)}% of your expenses. Net out-of-pocket is $${totalOutOfPocket.toFixed(2)} after reimbursements.`
                       : filterMode !== FILTER_MODES.ALL
                         ? 'No receipts were found for this time period. Try another quick filter or switch back to all time.'
                         : 'Upload your first receipt and ReceiptiFy will map your spending patterns automatically.'}
@@ -1106,19 +1337,20 @@ function App() {
                     <strong>{filteredReceipts.length}</strong>
                   </div>
                   <div className="insight-pill">
-                    <span>Avg. Receipt</span>
-                    <strong>${averageSpend.toFixed(2)}</strong>
+                    <span>Total Reimbursements Received</span>
+                    <strong>${totalReimbursements.toFixed(2)}</strong>
                   </div>
                   <div className="insight-pill">
-                    <span>Total Spend</span>
-                    <strong>${totalSpend.toFixed(2)}</strong>
+                    <span>Net Out-of-Pocket</span>
+                    <strong>${totalOutOfPocket.toFixed(2)}</strong>
                   </div>
                 </div>
               </section>
 
               <div className="stats-row">
                 <StatCard label="Receipts in View" value={filteredReceipts.length} icon="🧾" color="#16a34a" />
-                <StatCard label="Money Tracked" value={`$${totalSpend.toFixed(2)}`} icon="💰" color="#3b82f6" />
+                <StatCard label="Total Expenses" value={`$${totalExpenses.toFixed(2)}`} icon="💸" color="#3b82f6" />
+                <StatCard label="Total Reimbursements Received" value={`$${totalReimbursements.toFixed(2)}`} icon="💵" color="#7c3aed" />
                 <StatCard
                   label="Most Frequent Category"
                   value={topCategory}
@@ -1168,10 +1400,18 @@ function App() {
                                 <button className="receipt-info-btn" onClick={() => openReceiptModal(item)} title="View receipt details" type="button">
                                   <span className="store-name">{item.store_name}</span>
                                   <span className="date">{formatReceiptDate(getReceiptDateValue(item))}</span>
-                                  {item.split_enabled && (
+                                  {isInvoiceReceipt(item) ? (
                                     <span className="split-spend">
-                                      You spent ${normalizeReceiptAmount(getReceiptEffectiveSpend(item))} of ${normalizeReceiptAmount(item.total)}
+                                      {item.reimbursement_received_enabled
+                                        ? `Received $${normalizeReceiptAmount(getInvoiceEffectiveReimbursement(item))} of est. $${normalizeReceiptAmount(item.total)}`
+                                        : `Est. reimbursement $${normalizeReceiptAmount(item.total)}`}
                                     </span>
+                                  ) : (
+                                    item.split_enabled && (
+                                      <span className="split-spend">
+                                        You spent ${normalizeReceiptAmount(getReceiptEffectiveSpend(item))} of ${normalizeReceiptAmount(item.total)}
+                                      </span>
+                                    )
                                   )}
                                 </button>
                               </div>
@@ -1282,6 +1522,169 @@ function App() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {activeTab === 'analytics' && (
+            <div className="analytics-page">
+              <section className="analytics-header-card">
+                <div>
+                  <p className="date-filter-kicker">Spending analytics</p>
+                  <h2>Expenses vs reimbursements</h2>
+                  <p>Keep expenditure and reimbursement flows separate, then compare them through net out-of-pocket.</p>
+                </div>
+                <div className="analytics-controls">
+                  <div className="filter-presets">
+                    <button
+                      className={`filter-chip ${analyticsMode === ANALYTICS_MODES.LAST_MONTH ? 'active' : ''}`}
+                      onClick={() => setAnalyticsMode(ANALYTICS_MODES.LAST_MONTH)}
+                    >
+                      Last month
+                    </button>
+                    <button
+                      className={`filter-chip ${analyticsMode === ANALYTICS_MODES.LAST_3_MONTHS ? 'active' : ''}`}
+                      onClick={() => setAnalyticsMode(ANALYTICS_MODES.LAST_3_MONTHS)}
+                    >
+                      Last 3 months
+                    </button>
+                    <button
+                      className={`filter-chip ${analyticsMode === ANALYTICS_MODES.ALL_TIME ? 'active' : ''}`}
+                      onClick={() => setAnalyticsMode(ANALYTICS_MODES.ALL_TIME)}
+                    >
+                      All time
+                    </button>
+                    <button
+                      className={`filter-chip ${analyticsMode === ANALYTICS_MODES.SPECIFIC_YEAR ? 'active' : ''}`}
+                      onClick={() => setAnalyticsMode(ANALYTICS_MODES.SPECIFIC_YEAR)}
+                    >
+                      Specific year
+                    </button>
+                  </div>
+
+                  {analyticsMode === ANALYTICS_MODES.SPECIFIC_YEAR && (
+                    <label className="analytics-year-picker-wrap">
+                      Year
+                      <select
+                        className="month-picker"
+                        value={selectedAnalyticsYear}
+                        onChange={(event) => setSelectedAnalyticsYear(Number(event.target.value))}
+                      >
+                        {analyticsYears.map((year) => (
+                          <option key={year} value={year}>
+                            {year}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+              </section>
+
+              {analyticsFilteredReceipts.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-icon">📊</div>
+                  <h3>No analytics data for this selection</h3>
+                  <p>Try another period or add more receipts to unlock insights.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="analytics-kpi-grid">
+                    <StatCard label="Total Expenses" value={`$${analyticsExpenseTotal.toFixed(2)}`} icon="💸" color="#23ce6b" />
+                    <StatCard label="Total Reimbursements Received" value={`$${analyticsReimbursementTotal.toFixed(2)}`} icon="💵" color="#7c3aed" />
+                    <StatCard label="Net Out-of-Pocket" value={`$${analyticsNetOutOfPocket.toFixed(2)}`} icon="⚖️" color="#3b82f6" />
+                  </div>
+
+                  <div className="analytics-grid">
+                  <section className="analytics-card">
+                    <div className="analytics-card-header">
+                      <h3>Expense Category Share</h3>
+                      <span>${analyticsExpenseTotal.toFixed(2)} total expense</span>
+                    </div>
+
+                    <div className="analytics-pie-layout">
+                      <div className="analytics-pie" style={{ background: `conic-gradient(${analyticsExpensePieGradient})` }}>
+                        <div className="analytics-pie-center">
+                          <strong>${analyticsExpenseTotal.toFixed(0)}</strong>
+                          <span>Expense</span>
+                        </div>
+                      </div>
+
+                      <ul className="analytics-legend">
+                        {analyticsExpenseCategorySummary.map((entry) => (
+                          <li key={entry.name}>
+                            <span className="legend-dot" style={{ background: entry.color }} />
+                            <span className="legend-name">{entry.name}</span>
+                            <span className="legend-pct">{entry.pct.toFixed(0)}%</span>
+                            <span className="legend-total">${entry.total.toFixed(2)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </section>
+
+                  <section className="analytics-card">
+                    <div className="analytics-card-header">
+                      <h3>Reimbursement Category Share</h3>
+                      <span>${analyticsReimbursementTotal.toFixed(2)} reimbursed</span>
+                    </div>
+
+                    {analyticsReimbursementCategorySummary.length === 0 ? (
+                      <div className="analytics-empty-mini">No invoice reimbursements for this period yet.</div>
+                    ) : (
+                      <div className="analytics-pie-layout">
+                        <div className="analytics-pie reimbursement" style={{ background: `conic-gradient(${analyticsReimbursementPieGradient})` }}>
+                          <div className="analytics-pie-center">
+                            <strong>${analyticsReimbursementTotal.toFixed(0)}</strong>
+                            <span>Reimbursed</span>
+                          </div>
+                        </div>
+
+                        <ul className="analytics-legend">
+                          {analyticsReimbursementCategorySummary.map((entry) => (
+                            <li key={entry.name}>
+                              <span className="legend-dot" style={{ background: entry.color }} />
+                              <span className="legend-name">{entry.name}</span>
+                              <span className="legend-pct">{entry.pct.toFixed(0)}%</span>
+                              <span className="legend-total">${entry.total.toFixed(2)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="analytics-card analytics-card-wide">
+                    <div className="analytics-card-header">
+                      <h3>Monthly Expenses vs Reimbursements</h3>
+                      <span>{analyticsChartSeries.length} month(s)</span>
+                    </div>
+
+                    <div className="analytics-bars">
+                      {analyticsChartSeries.map((entry) => {
+                        const expenseHeight = analyticsMaxMonthTotal > 0 ? Math.max((entry.expense / analyticsMaxMonthTotal) * 100, 6) : 0;
+                        const reimbursementHeight =
+                          analyticsMaxMonthTotal > 0 ? Math.max((entry.reimbursement / analyticsMaxMonthTotal) * 100, 6) : 0;
+
+                        return (
+                          <div className="analytics-bar-col" key={entry.key}>
+                            <div className="analytics-bar-track dual">
+                              <span className="analytics-bar-fill expense" style={{ height: `${expenseHeight}%` }} />
+                              <span className="analytics-bar-fill reimbursement" style={{ height: `${reimbursementHeight}%` }} />
+                            </div>
+                            <span className="analytics-bar-value">E ${entry.expense.toFixed(0)} / R ${entry.reimbursement.toFixed(0)}</span>
+                            <span className="analytics-bar-label">{entry.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="analytics-trend-legend">
+                      <span><i className="legend-swatch expense" /> Expenses</span>
+                      <span><i className="legend-swatch reimbursement" /> Reimbursements</span>
+                    </div>
+                  </section>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -1410,17 +1813,16 @@ function App() {
                     </label>
 
                     <label>
-                      Category
+                      {receiptDraft.invoice_enabled ? 'Invoice Category' : 'Category'}
                       <select
                         value={receiptDraft.category}
                         onChange={(event) => setReceiptDraft((prev) => ({ ...prev, category: event.target.value }))}
                       >
-                        <option value="Food">Food</option>
-                        <option value="Entertainment">Entertainment</option>
-                        <option value="Transport">Transport</option>
-                        <option value="Utilities">Utilities</option>
-                        <option value="Shopping">Shopping</option>
-                        <option value="Other">Other</option>
+                        {getCategoryOptions(receiptDraft.invoice_enabled).map((categoryOption) => (
+                          <option key={categoryOption} value={categoryOption}>
+                            {categoryOption}
+                          </option>
+                        ))}
                       </select>
                     </label>
 
@@ -1437,19 +1839,81 @@ function App() {
                     <label className="split-toggle-row">
                       <input
                         type="checkbox"
-                        checked={Boolean(receiptDraft.split_enabled)}
+                        checked={Boolean(receiptDraft.invoice_enabled)}
                         onChange={(event) =>
                           setReceiptDraft((prev) => ({
                             ...prev,
-                            split_enabled: event.target.checked,
-                            split_amount: event.target.checked ? prev.split_amount : '',
+                            invoice_enabled: event.target.checked,
+                            category:
+                              event.target.checked && !INVOICE_CATEGORY_OPTIONS.includes(prev.category)
+                                ? 'Other'
+                                : prev.category,
+                            split_enabled: event.target.checked ? false : prev.split_enabled,
+                            split_amount: event.target.checked ? '' : prev.split_amount,
+                            reimbursement_received_enabled: event.target.checked ? prev.reimbursement_received_enabled : false,
+                            reimbursement_received_amount: event.target.checked ? prev.reimbursement_received_amount : '',
                           }))
                         }
                       />
-                      <span>Split expense for this receipt</span>
+                      <span>This is an invoice (reimbursement expected)</span>
                     </label>
 
-                    {receiptDraft.split_enabled && (
+                    {receiptDraft.invoice_enabled && (
+                      <>
+                        <p className="invoice-estimate-note">Estimated reimbursement total: ${normalizeReceiptAmount(receiptDraft.total)}</p>
+
+                        <label className="split-toggle-row">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(receiptDraft.reimbursement_received_enabled)}
+                            onChange={(event) =>
+                              setReceiptDraft((prev) => ({
+                                ...prev,
+                                reimbursement_received_enabled: event.target.checked,
+                                reimbursement_received_amount: event.target.checked ? prev.reimbursement_received_amount : '',
+                              }))
+                            }
+                          />
+                          <span>I received reimbursement</span>
+                        </label>
+
+                        {receiptDraft.reimbursement_received_enabled && (
+                          <label>
+                            Reimbursement Received ($)
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max={receiptDraft.total || undefined}
+                              value={receiptDraft.reimbursement_received_amount}
+                              onChange={(event) =>
+                                setReceiptDraft((prev) => ({ ...prev, reimbursement_received_amount: event.target.value }))
+                              }
+                              required
+                            />
+                          </label>
+                        )}
+                      </>
+                    )}
+
+                    {!receiptDraft.invoice_enabled && (
+                      <label className="split-toggle-row">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(receiptDraft.split_enabled)}
+                          onChange={(event) =>
+                            setReceiptDraft((prev) => ({
+                              ...prev,
+                              split_enabled: event.target.checked,
+                              split_amount: event.target.checked ? prev.split_amount : '',
+                            }))
+                          }
+                        />
+                        <span>Split expense for this receipt</span>
+                      </label>
+                    )}
+
+                    {!receiptDraft.invoice_enabled && receiptDraft.split_enabled && (
                       <label>
                         Your Expenditure ($)
                         <input
