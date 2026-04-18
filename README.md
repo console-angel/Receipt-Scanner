@@ -80,6 +80,15 @@ These are installed by `npm install` from `package.json`.
 
 The app expects a table named `receipts` and an RPC function named `delete_receipt`.
 
+### SQL Editor migration (existing projects)
+
+Run this in Supabase SQL Editor to add receipt date support to an existing table:
+
+```sql
+alter table public.receipts
+add column if not exists receipt_date date;
+```
+
 ### Minimum `receipts` table
 
 ```sql
@@ -88,6 +97,7 @@ create table if not exists public.receipts (
   store_name text not null,
   total numeric(10,2) not null,
   category text,
+  receipt_date date,
   created_at timestamptz not null default now()
 );
 ```
@@ -134,6 +144,7 @@ src/
   - `store_name`
   - `total`
   - `category`
+  - `receipt_date` (YYYY-MM-DD or null)
 
 ### Change database integration
 

@@ -1,5 +1,27 @@
 let aiClient = null;
 
+const normalizeReceiptDate = (value) => {
+  if (!value) return null;
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  // Prefer direct ISO date (YYYY-MM-DD) for database DATE compatibility.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return raw;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+  const dd = String(parsed.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const getGeminiClient = async () => {
   if (aiClient) return aiClient;
 
@@ -20,6 +42,7 @@ export const scanReceipt = async (base64Image, mimeType) => {
     - "store_name": The name of the store or place.
     - "total": The final total amount as a number (e.g., 25.50).
     - "category": Categorize the receipt into one of these: "Food", "Entertainment", "Transport", "Utilities", "Shopping", "Other".
+    - "receipt_date": The receipt purchase date in YYYY-MM-DD format. If unknown, return null.
   `;
 
   try {
@@ -45,7 +68,12 @@ export const scanReceipt = async (base64Image, mimeType) => {
     // Clean up potential markdown formatting
     rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
     
-    return JSON.parse(rawText);
+    const parsed = JSON.parse(rawText);
+
+    return {
+      ...parsed,
+      receipt_date: normalizeReceiptDate(parsed.receipt_date),
+    };
   } catch (error) {
     console.error("Error scanning receipt with Gemini:", error);
     throw new Error("Failed to scan receipt. Please try again.");

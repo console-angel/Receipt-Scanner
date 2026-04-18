@@ -139,7 +139,12 @@ function App() {
       const mimeType = uploadedImage.split(';')[0].split(':')[1];
       const extractedData = await scanReceipt(uploadedImage, mimeType);
       const { data, error } = await supabase.from('receipts')
-        .insert([{ store_name: extractedData.store_name, total: extractedData.total, category: extractedData.category }])
+        .insert([{
+          store_name: extractedData.store_name,
+          total: extractedData.total,
+          category: extractedData.category,
+          receipt_date: extractedData.receipt_date,
+        }])
         .select();
       if (error) throw new Error('Failed to save receipt to database.');
       if (data?.length > 0) setReceipts(prev => [data[0], ...prev]);
@@ -190,11 +195,14 @@ function App() {
     lines.push('ALL RECEIPTS');
     lines.push(['Store / Place', 'Category', 'Total ($)', 'Date'].map(esc).join(','));
     receipts.forEach(r => {
+      const sourceDate = r.receipt_date || r.created_at;
       lines.push([
         r.store_name,
         r.category || 'Other',
         Number(r.total).toFixed(2),
-        new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        sourceDate
+          ? new Date(sourceDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : 'N/A',
       ].map(esc).join(','));
     });
 
@@ -356,7 +364,11 @@ function App() {
                             <li key={item.id} className="receipt-item">
                               <div className="receipt-info">
                                 <span className="store-name">{item.store_name}</span>
-                                <span className="date">{new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                <span className="date">{
+                                  (item.receipt_date || item.created_at)
+                                    ? new Date(item.receipt_date || item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                    : 'Date unavailable'
+                                }</span>
                               </div>
                               <div className="receipt-actions">
                                 <span className="total">${Number(item.total).toFixed(2)}</span>
