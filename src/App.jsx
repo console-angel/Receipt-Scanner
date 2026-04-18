@@ -3,78 +3,123 @@ import { supabase } from './lib/supabase';
 import { scanReceipt } from './lib/gemini';
 import './App.css';
 
+const categoryIcons = {
+  Food:          { icon: '🍔', color: '#f59e0b', bg: '#fef3c7' },
+  Entertainment: { icon: '🎬', color: '#8b5cf6', bg: '#ede9fe' },
+  Transport:     { icon: '🚗', color: '#3b82f6', bg: '#dbeafe' },
+  Utilities:     { icon: '⚡', color: '#f97316', bg: '#ffedd5' },
+  Shopping:      { icon: '🛍️', color: '#ec4899', bg: '#fce7f3' },
+  Other:         { icon: '📋', color: '#6b7280', bg: '#f3f4f6' },
+};
+
+const getCategoryStyle = (cat) => categoryIcons[cat] || categoryIcons['Other'];
+
+function Logo() {
+  return (
+    <div className="logo-wrap">
+      <div className="logo-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor" fillOpacity="0.9"/>
+          <path d="M2 17l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none"/>
+          <path d="M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none"/>
+        </svg>
+      </div>
+      <span className="logo-text">BudgetScan</span>
+    </div>
+  );
+}
+
+function Sidebar({ activeTab, setActiveTab }) {
+  const navItems = [
+    {
+      id: 'dashboard', label: 'Dashboard',
+      icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    },
+    {
+      id: 'upload', label: 'Scan Receipt',
+      icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    },
+  ];
+  return (
+    <aside className="sidebar">
+      <Logo />
+      <nav className="sidebar-nav">
+        {navItems.map(item => (
+          <button key={item.id} className={`nav-item ${activeTab === item.id ? 'active' : ''}`} onClick={() => setActiveTab(item.id)}>
+            <span className="nav-icon">{item.icon}</span>
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="sidebar-footer">
+        <div className="sidebar-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+          AI Powered
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function StatCard({ label, value, icon, color }) {
+  return (
+    <div className="stat-card">
+      <div className="stat-icon" style={{ background: color + '22', color }}>
+        <span>{icon}</span>
+      </div>
+      <div className="stat-info">
+        <span className="stat-value">{value}</span>
+        <span className="stat-label">{label}</span>
+      </div>
+    </div>
+  );
+}
+
 function App() {
-  const [dragActive, setDragActive] = useState(false);
+  const [dragActive, setDragActive]       = useState(false);
   const [uploadedImage, setUploadedImage] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [receipts, setReceipts] = useState([]);
-  const [activeTab, setActiveTab] = useState('upload'); // 'upload' or 'dashboard'
+  const [isProcessing, setIsProcessing]   = useState(false);
+  const [receipts, setReceipts]           = useState([]);
+  const [activeTab, setActiveTab]         = useState('dashboard');
   const inputRef = useRef(null);
 
   useEffect(() => {
     const fetchReceipts = async () => {
-      const { data, error } = await supabase
-        .from('receipts')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (!error && data) {
-        setReceipts(data);
-      }
+      const { data, error } = await supabase.from('receipts').select('*').order('created_at', { ascending: false });
+      if (!error && data) setReceipts(data);
     };
-
     fetchReceipts();
   }, []);
 
-
   const handleDrag = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
+    e.preventDefault(); e.stopPropagation();
+    setDragActive(e.type === 'dragenter' || e.type === 'dragover');
   };
 
   const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     setDragActive(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFile(e.dataTransfer.files[0]);
-    }
+    if (e.dataTransfer.files?.[0]) handleFile(e.dataTransfer.files[0]);
   };
 
   const handleChange = (e) => {
     e.preventDefault();
-    if (e.target.files && e.target.files[0]) {
-      handleFile(e.target.files[0]);
-    }
+    if (e.target.files?.[0]) handleFile(e.target.files[0]);
   };
 
   const handleFile = (file) => {
     if (file.type.match(/image\/(jpeg|jpg|png)/)) {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setUploadedImage(e.target.result);
-      };
+      reader.onload = (e) => setUploadedImage(e.target.result);
       reader.readAsDataURL(file);
     } else {
       alert('Please upload a valid image file (jpeg, jpg, png).');
     }
   };
 
-  const onButtonClick = () => {
-    inputRef.current.click();
-  };
-
   const removeImage = () => {
     setUploadedImage(null);
-    if (inputRef.current) {
-      inputRef.current.value = '';
-    }
+    if (inputRef.current) inputRef.current.value = '';
   };
 
   const processReceipt = async () => {
@@ -83,27 +128,14 @@ function App() {
     try {
       const mimeType = uploadedImage.split(';')[0].split(':')[1];
       const extractedData = await scanReceipt(uploadedImage, mimeType);
-      
-      const { data, error } = await supabase.from('receipts').insert([
-        {
-          store_name: extractedData.store_name,
-          total: extractedData.total,
-          category: extractedData.category
-        }
-      ]).select();
-
-      if (error) {
-        console.error("Supabase Error:", error);
-        throw new Error("Failed to save receipt to database.");
-      }
-      
-      if (data && data.length > 0) {
-        setReceipts(prev => [data[0], ...prev]);
-      }
-      
-      setUploadedImage(null);
+      const { data, error } = await supabase.from('receipts')
+        .insert([{ store_name: extractedData.store_name, total: extractedData.total, category: extractedData.category }])
+        .select();
+      if (error) throw new Error('Failed to save receipt to database.');
+      if (data?.length > 0) setReceipts(prev => [data[0], ...prev]);
+      removeImage();
       setActiveTab('dashboard');
-    } catch(e) {
+    } catch (e) {
       console.error(e);
       alert(e.message);
     } finally {
@@ -111,129 +143,141 @@ function App() {
     }
   };
 
-  const categorizedReceipts = receipts.reduce((acc, receipt) => {
-    const cat = receipt.category || 'Other';
+  const categorizedReceipts = receipts.reduce((acc, r) => {
+    const cat = r.category || 'Other';
     if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(receipt);
+    acc[cat].push(r);
     return acc;
   }, {});
 
-  return (
-    <div className="app-container">
-      <header className="header">
-        <h1>Receipt Scanner</h1>
-        <p>Extract structured data from your receipts instantly</p>
-        
-        <div className="tabs">
-          <button 
-            className={`tab ${activeTab === 'upload' ? 'active' : ''}`}
-            onClick={() => setActiveTab('upload')}
-          >
-            Scan
-          </button>
-          <button 
-            className={`tab ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dashboard')}
-          >
-            Dashboard
-          </button>
-        </div>
-      </header>
+  const totalSpend = receipts.reduce((sum, r) => sum + Number(r.total || 0), 0);
+  const topCategory = Object.entries(categorizedReceipts).sort((a, b) => b[1].length - a[1].length)[0]?.[0] || '—';
 
-      <main className="main-content">
-        {activeTab === 'upload' && (
-          !uploadedImage ? (
-            <div 
-              className={`upload-zone ${dragActive ? 'active' : ''}`}
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-              onClick={onButtonClick}
-            >
-              <input 
-                ref={inputRef}
-                type="file" 
-                className="hidden-input" 
-                accept=".jpeg,.jpg,.png,image/jpeg,image/png"
-                onChange={handleChange}
-              />
-              <div className="upload-icon">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="17 8 12 3 7 8"></polyline>
-                  <line x1="12" y1="3" x2="12" y2="15"></line>
-                </svg>
+  return (
+    <div className="app-shell">
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+
+      <div className="app-body">
+        <header className="topbar">
+          <div className="topbar-title">
+            {activeTab === 'dashboard' ? 'Dashboard' : 'Scan Receipt'}
+          </div>
+          <button className="topbar-cta" onClick={() => setActiveTab('upload')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Scan New Receipt
+          </button>
+        </header>
+
+        <main className="main-content">
+
+          {activeTab === 'dashboard' && (
+            <div className="dashboard-page">
+              <div className="stats-row">
+                <StatCard label="Total Receipts" value={receipts.length} icon="🧾" color="#16a34a" />
+                <StatCard label="Total Spent" value={`$${totalSpend.toFixed(2)}`} icon="💰" color="#3b82f6" />
+                <StatCard label="Top Category" value={topCategory} icon="🏆" color="#f59e0b" />
               </div>
-              <h2>Upload a receipt</h2>
-              <p>Drag and drop or click to select a file</p>
-              <span className="file-formats">Supported formats: JPEG, JPG, PNG</span>
+
+              {Object.keys(categorizedReceipts).length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-icon">🧾</div>
+                  <h3>No receipts yet</h3>
+                  <p>Scan your first receipt to start tracking your spending.</p>
+                  <button className="btn-primary" onClick={() => setActiveTab('upload')}>Scan a Receipt</button>
+                </div>
+              ) : (
+                <div className="categories-grid">
+                  {Object.entries(categorizedReceipts).map(([category, items]) => {
+                    const style = getCategoryStyle(category);
+                    const catTotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
+                    return (
+                      <div key={category} className="category-card">
+                        <div className="category-header">
+                          <div className="cat-icon-wrap" style={{ background: style.bg, color: style.color }}>{style.icon}</div>
+                          <div className="cat-meta">
+                            <h3>{category}</h3>
+                            <span className="cat-count">{items.length} receipt{items.length !== 1 ? 's' : ''}</span>
+                          </div>
+                          <span className="cat-total">${catTotal.toFixed(2)}</span>
+                        </div>
+                        <ul className="receipt-list">
+                          {items.map(item => (
+                            <li key={item.id} className="receipt-item">
+                              <div className="receipt-info">
+                                <span className="store-name">{item.store_name}</span>
+                                <span className="date">{new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                              </div>
+                              <span className="total">${Number(item.total).toFixed(2)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="preview-container">
-              <div className="image-wrapper">
-                <img src={uploadedImage} alt="Receipt preview" className="preview-image" />
-                <button 
-                  className="remove-btn" 
-                  onClick={removeImage} 
-                  aria-label="Remove image"
-                  disabled={isProcessing}
-                >
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                  </svg>
-                </button>
-                {isProcessing && (
-                  <div className="processing-overlay">
-                    <div className="spinner"></div>
-                    <p>AI is scanning...</p>
+          )}
+
+          {activeTab === 'upload' && (
+            <div className="upload-page">
+              <div className="upload-page-inner">
+                <div className="scan-intro">
+                  <h2>Scan a Receipt</h2>
+                  <p>Upload a photo and our AI will extract the store, total, and spending category automatically.</p>
+                </div>
+                {!uploadedImage ? (
+                  <div
+                    className={`upload-zone ${dragActive ? 'active' : ''}`}
+                    onDragEnter={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDragOver={handleDrag}
+                    onDrop={handleDrop}
+                    onClick={() => inputRef.current.click()}
+                  >
+                    <input ref={inputRef} type="file" className="hidden-input" accept=".jpeg,.jpg,.png,image/jpeg,image/png" onChange={handleChange} />
+                    <div className="upload-icon-circle">
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                      </svg>
+                    </div>
+                    <h3>Drop your receipt here</h3>
+                    <p>or <span className="upload-link">browse files</span></p>
+                    <span className="file-formats">Supports JPEG, JPG, PNG</span>
+                  </div>
+                ) : (
+                  <div className="preview-container">
+                    <div className="image-wrapper">
+                      <img src={uploadedImage} alt="Receipt preview" className="preview-image" />
+                      <button className="remove-btn" onClick={removeImage} disabled={isProcessing} aria-label="Remove">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                      </button>
+                      {isProcessing && (
+                        <div className="processing-overlay">
+                          <div className="spinner"/>
+                          <p>AI is reading your receipt…</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="action-buttons">
+                      <button className="btn-secondary" onClick={removeImage} disabled={isProcessing}>Try Another</button>
+                      <button className="btn-primary" onClick={processReceipt} disabled={isProcessing}>
+                        {isProcessing ? 'Processing…' : '✨ Process Receipt'}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
-              <div className="action-buttons">
-                <button className="btn-secondary" onClick={removeImage} disabled={isProcessing}>Try Another</button>
-                <button className="btn-primary" onClick={processReceipt} disabled={isProcessing}>
-                  {isProcessing ? 'Processing...' : 'Process Receipt'}
-                </button>
-              </div>
             </div>
-          )
-        )}
-
-        {activeTab === 'dashboard' && (
-          <div className="dashboard">
-            {Object.keys(categorizedReceipts).length === 0 ? (
-              <div className="empty-state">
-                <p>No receipts found. Go scan one!</p>
-                <button className="btn-primary mt-4" onClick={() => setActiveTab('upload')}>Scan Receipt</button>
-              </div>
-            ) : (
-              <div className="categories-grid">
-                {Object.entries(categorizedReceipts).map(([category, items]) => (
-                  <div key={category} className="category-card">
-                    <div className="category-header">
-                      <h3>{category}</h3>
-                      <span className="badge">{items.length}</span>
-                    </div>
-                    <ul className="receipt-list">
-                      {items.map(item => (
-                        <li key={item.id} className="receipt-item">
-                          <div className="receipt-info">
-                            <span className="store-name">{item.store_name}</span>
-                            <span className="date">{new Date(item.created_at).toLocaleDateString()}</span>
-                          </div>
-                          <span className="total">${Number(item.total).toFixed(2)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </main>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
