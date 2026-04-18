@@ -1,8 +1,16 @@
-import { GoogleGenAI } from '@google/genai';
+let aiClient = null;
 
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+const getGeminiClient = async () => {
+  if (aiClient) return aiClient;
+
+  const { GoogleGenAI } = await import('@google/genai');
+  aiClient = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+  return aiClient;
+};
 
 export const scanReceipt = async (base64Image, mimeType) => {
+  const ai = await getGeminiClient();
+
   // Strip out the data:image/jpeg;base64, part if present
   const base64Data = base64Image.split(',')[1] || base64Image;
 

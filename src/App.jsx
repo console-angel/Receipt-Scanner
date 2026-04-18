@@ -11,12 +11,12 @@ import imgShopping      from './assets/category_shopping.png';
 import imgOther         from './assets/category_other.png';
 
 const categoryIcons = {
-  Food:          { img: imgFood,          color: '#f59e0b', bg: '#fef3c7' },
-  Entertainment: { img: imgEntertainment, color: '#8b5cf6', bg: '#ede9fe' },
-  Transport:     { img: imgTransport,     color: '#3b82f6', bg: '#dbeafe' },
-  Utilities:     { img: imgUtilities,     color: '#f97316', bg: '#ffedd5' },
-  Shopping:      { img: imgShopping,      color: '#ec4899', bg: '#fce7f3' },
-  Other:         { img: imgOther,         color: '#6b7280', bg: '#f3f4f6' },
+  Food:          { img: imgFood,          color: '#23CE6B', bg: '#E5F9EE' },
+  Entertainment: { img: imgEntertainment, color: '#272D2D', bg: '#EDF5FC' },
+  Transport:     { img: imgTransport,     color: '#4F6172', bg: '#E7EEF6' },
+  Utilities:     { img: imgUtilities,     color: '#6C7D8F', bg: '#EAF1F8' },
+  Shopping:      { img: imgShopping,      color: '#5B6A79', bg: '#E8EFF7' },
+  Other:         { img: imgOther,         color: '#A39BA8', bg: '#EDF5FC' },
 };
 
 const getCategoryStyle = (cat) => categoryIcons[cat] || categoryIcons['Other'];
@@ -73,7 +73,7 @@ function StatCard({ label, value, icon, img, color }) {
     <div className="stat-card">
       <div className="stat-icon" style={{ background: color + '22', color }}>
         {img
-          ? <img src={img} alt={label} className="stat-cat-img" />
+          ? <img src={img} alt={label} className="stat-cat-img" loading="lazy" decoding="async" />
           : <span>{icon}</span>
         }
       </div>
@@ -162,6 +162,18 @@ function App() {
 
   const totalSpend = receipts.reduce((sum, r) => sum + Number(r.total || 0), 0);
   const topCategory = Object.entries(categorizedReceipts).sort((a, b) => b[1].length - a[1].length)[0]?.[0] || '—';
+  const averageSpend = receipts.length > 0 ? totalSpend / receipts.length : 0;
+  const categorySummary = Object.entries(categorizedReceipts)
+    .map(([name, items]) => ({
+      name,
+      count: items.length,
+      total: items.reduce((sum, receipt) => sum + Number(receipt.total || 0), 0),
+    }))
+    .sort((a, b) => b.total - a.total);
+  const largestCategoryTotal = categorySummary[0]?.total || 0;
+  const topSpendShare = totalSpend > 0 && largestCategoryTotal > 0
+    ? (largestCategoryTotal / totalSpend) * 100
+    : 0;
 
   const exportToCSV = () => {
     if (receipts.length === 0) {
@@ -253,11 +265,67 @@ function App() {
 
           {activeTab === 'dashboard' && (
             <div className="dashboard-page">
+              <section className="insight-banner">
+                <div className="insight-copy">
+                  <p className="insight-kicker">Smart Spending Snapshot</p>
+                  <h2>Spending rhythm at a glance</h2>
+                  <p>
+                    {receipts.length > 0
+                      ? `Your top spending category is ${categorySummary[0]?.name || 'Other'} with ${topSpendShare.toFixed(0)}% of all receipts.`
+                      : 'Upload your first receipt and BudgetScan will map your spending patterns automatically.'}
+                  </p>
+                </div>
+                <div className="insight-metrics">
+                  <div className="insight-pill">
+                    <span>Avg. Receipt</span>
+                    <strong>${averageSpend.toFixed(2)}</strong>
+                  </div>
+                  <div className="insight-pill">
+                    <span>Total Spend</span>
+                    <strong>${totalSpend.toFixed(2)}</strong>
+                  </div>
+                  <button className="insight-action" onClick={() => setActiveTab('upload')}>
+                    Add New Receipt
+                  </button>
+                </div>
+              </section>
+
               <div className="stats-row">
                 <StatCard label="Total Receipts" value={receipts.length} icon="🧾" color="#16a34a" />
                 <StatCard label="Total Spent" value={`$${totalSpend.toFixed(2)}`} icon="💰" color="#3b82f6" />
                 <StatCard label="Top Category" value={topCategory} img={topCategory !== '—' ? getCategoryStyle(topCategory).img : undefined} icon="🏆" color="#f59e0b" />
               </div>
+
+              {categorySummary.length > 0 && (
+                <section className="category-meter-panel">
+                  <div className="meter-header">
+                    <h3>Category Spend Distribution</h3>
+                    <span>Live from your uploaded receipts</span>
+                  </div>
+                  <div className="meter-grid">
+                    {categorySummary.map((item) => {
+                      const widthPct = largestCategoryTotal > 0 ? (item.total / largestCategoryTotal) * 100 : 0;
+                      const style = getCategoryStyle(item.name);
+
+                      return (
+                        <div key={item.name} className="meter-row">
+                          <div className="meter-meta">
+                            <span className="meter-name">{item.name}</span>
+                            <span className="meter-count">{item.count} receipt{item.count !== 1 ? 's' : ''}</span>
+                          </div>
+                          <div className="meter-track">
+                            <span
+                              className="meter-fill"
+                              style={{ width: `${Math.max(widthPct, 6)}%`, background: `linear-gradient(90deg, ${style.color}, #23CE6B)` }}
+                            />
+                          </div>
+                          <span className="meter-value">${item.total.toFixed(2)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
 
               {Object.keys(categorizedReceipts).length === 0 ? (
                 <div className="empty-state">
@@ -275,7 +343,7 @@ function App() {
                       <div key={category} className="category-card">
                         <div className="category-header">
                           <div className="cat-icon-wrap" style={{ background: style.bg }}>
-                            <img src={style.img} alt={category} className="cat-img" />
+                            <img src={style.img} alt={category} className="cat-img" loading="lazy" decoding="async" />
                           </div>
                           <div className="cat-meta">
                             <h3>{category}</h3>
