@@ -4,6 +4,9 @@ A React + Vite web app that scans receipt images with Gemini AI, stores extracte
 
 ## Features
 
+- Email/password login and signup with client-side attempt throttling
+- Per-user receipt isolation (each authenticated user sees only their own receipts)
+- Settings screen to update username, switch light/dark mode, and change password
 - Upload receipt images (JPEG/JPG/PNG)
 - Extract store name, total amount, and category using Gemini
 - Save and fetch receipts from Supabase
@@ -79,15 +82,86 @@ These are installed by `npm install` from `package.json`.
 
 ## Supabase Setup
 
-The app expects a table named `receipts` and an RPC function named `delete_receipt`.
+The app now expects:
+
+- Supabase Auth with Email provider enabled
+- A `profiles` table keyed by `auth.users.id`
+- A `receipts` table with `user_id` (UUID) tied to the authenticated user
+- Row Level Security policies that scope read/write/delete to the current user
 
 ### SQL Editor migration (existing projects)
 
-Run this in Supabase SQL Editor to add receipt date support to an existing table:
+Run this in Supabase SQL Editor for multi-user auth + receipts:
 
 ```sql
+create extension if not exists "uuid-ossp";
+
+create table if not exists public.profiles (
+  id uuid primary key references auth.users (id) on delete cascade,
+  username text not null,
+  created_at timestamptz not null default now()
+);
+
 alter table public.receipts
+add column if not exists user_id uuid references auth.users (id) on delete cascade,
 add column if not exists receipt_date date;
+
+alter table public.receipts
+alter column user_id set not null;
+
+alter table public.profiles enable row level security;
+alter table public.receipts enable row level security;
+
+drop policy if exists "Profiles are viewable by owner" on public.profiles;
+create policy "Profiles are viewable by owner"
+on public.profiles
+for select
+to authenticated
+using (auth.uid() = id);
+
+drop policy if exists "Profiles are editable by owner" on public.profiles;
+create policy "Profiles are editable by owner"
+on public.profiles
+for insert
+to authenticated
+with check (auth.uid() = id);
+
+drop policy if exists "Profiles are updatable by owner" on public.profiles;
+create policy "Profiles are updatable by owner"
+on public.profiles
+for update
+to authenticated
+using (auth.uid() = id)
+with check (auth.uid() = id);
+
+drop policy if exists "Receipts are viewable by owner" on public.receipts;
+create policy "Receipts are viewable by owner"
+on public.receipts
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+drop policy if exists "Receipts are insertable by owner" on public.receipts;
+create policy "Receipts are insertable by owner"
+on public.receipts
+for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+drop policy if exists "Receipts are updatable by owner" on public.receipts;
+create policy "Receipts are updatable by owner"
+on public.receipts
+for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "Receipts are deletable by owner" on public.receipts;
+create policy "Receipts are deletable by owner"
+on public.receipts
+for delete
+to authenticated
+using (auth.uid() = user_id);
 ```
 
 ### Minimum `receipts` table
@@ -95,6 +169,7 @@ add column if not exists receipt_date date;
 ```sql
 create table if not exists public.receipts (
   id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
   store_name text not null,
   total numeric(10,2) not null,
   category text,
@@ -103,19 +178,20 @@ create table if not exists public.receipts (
 );
 ```
 
-### RPC function used by the app
+### Minimum `profiles` table
 
 ```sql
-create or replace function public.delete_receipt(receipt_id bigint)
-returns void
-language sql
-security definer
-as $$
-  delete from public.receipts where id = receipt_id;
-$$;
+create table if not exists public.profiles (
+  id uuid primary key references auth.users (id) on delete cascade,
+  username text not null,
+  created_at timestamptz not null default now()
+);
 ```
 
-If you use Row Level Security, ensure your policies allow the operations your users need (`select`, `insert`, and delete via RPC).
+### Notes on login rate limiting
+
+- The app includes client-side throttling (localStorage-based) for repeated failed password attempts.
+- For strong production security, also enable and tune Supabase Auth server-side protections in your project Auth settings.
 
 ## Available Scripts
 
