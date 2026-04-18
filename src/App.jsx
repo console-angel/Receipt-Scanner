@@ -210,6 +210,17 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  const deleteReceipt = async (id) => {
+    if (!window.confirm('Delete this receipt? This cannot be undone.')) return;
+    const { error } = await supabase.rpc('delete_receipt', { receipt_id: id });
+    if (error) {
+      console.error('Delete error:', error);
+      alert('Failed to delete receipt. Please try again.');
+      return;
+    }
+    setReceipts(prev => prev.filter(r => r.id !== id));
+  };
+
   return (
     <div className="app-shell">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -280,7 +291,22 @@ function App() {
                                 <span className="store-name">{item.store_name}</span>
                                 <span className="date">{new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                               </div>
-                              <span className="total">${Number(item.total).toFixed(2)}</span>
+                              <div className="receipt-actions">
+                                <span className="total">${Number(item.total).toFixed(2)}</span>
+                                <button
+                                  className="delete-btn"
+                                  onClick={() => deleteReceipt(item.id)}
+                                  aria-label={`Delete ${item.store_name}`}
+                                  title="Delete receipt"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                                    <path d="M10 11v6M14 11v6"/>
+                                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                                  </svg>
+                                </button>
+                              </div>
                             </li>
                           ))}
                         </ul>
